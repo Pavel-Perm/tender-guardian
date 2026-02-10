@@ -9,7 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle, AlertTriangle, XCircle, ChevronDown, Download,
-  FileText, ArrowLeft, Loader2, Clock, Filter,
+  FileText, ArrowLeft, Loader2, Clock, Filter, ClipboardList, Plus,
 } from "lucide-react";
 
 type Result = {
@@ -261,6 +261,22 @@ const AnalysisResults = () => {
                   </CollapsibleContent>
                 </Collapsible>
               ))}
+            </div>
+
+            {/* Bottom navigation */}
+            <div className="flex justify-between items-center pt-4 border-t">
+              <Link to={`/analysis/${id}/documents`}>
+                <Button variant="outline" className="gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Требуемые документы для участия
+                </Button>
+              </Link>
+              <Link to="/analysis/new">
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Новый анализ
+                </Button>
+              </Link>
             </div>
           </>
         )}
