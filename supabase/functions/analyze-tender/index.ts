@@ -281,7 +281,7 @@ ${blocksListStr}
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: docsPrompt },
-            { role: "user", content: `Проанализируй ВСЕ файлы и найди ВСЕ формы, документы и приложения, необходимые для подачи заявки (${fileTexts.length} файлов):\n${filesListing.substring(0, 120000)}` },
+            { role: "user", content: `Проанализируй ВСЕ файлы и найди ВСЕ формы, документы и приложения, необходимые для подачи заявки (${fileTexts.length} файлов):\n${filesListing.substring(0, 500000)}` },
           ],
         }),
       });
