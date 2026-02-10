@@ -3,12 +3,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FileSearch, LayoutDashboard, Plus, LogOut, User, Shield, Settings } from "lucide-react";
+import { FileSearch, LayoutDashboard, Plus, LogOut, User, Shield, Settings, Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const { signOut, user } = useAuth();
   const { isAdmin } = useIsAdmin();
   const location = useLocation();
+  const { theme, setTheme } = useTheme();
 
   const navItems = [
     { to: "/dashboard", label: "Дашборд", icon: LayoutDashboard },
@@ -43,6 +45,16 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
                 </Button>
               </Link>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              <span className="sr-only">Переключить тему</span>
+            </Button>
             <div className="ml-2 h-6 w-px bg-border" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
