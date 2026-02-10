@@ -113,7 +113,7 @@ const NewAnalysis = () => {
       await supabase.from("analyses").update({ status: "processing" as any }).eq("id", analysis.id);
 
       // Trigger AI analysis
-      setStage("Анализ документов...");
+      setStage("Анализ документов — подождите, это может занять пару минут...");
       setProgress(50);
 
       const { data: analyzeResult, error: analyzeError } = await supabase.functions.invoke("analyze-tender", {
