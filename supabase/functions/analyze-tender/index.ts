@@ -31,6 +31,27 @@ const ANALYSIS_BLOCKS = [
   { name: "Электронная подпись", order: 22 },
   { name: "Соответствие КТРУ", order: 23 },
   { name: "Преференции СМП/СОНКО", order: 24 },
+  { name: "Порядок оплаты", order: 25 },
+  { name: "Гарантийные обязательства", order: 26 },
+  { name: "Штрафы и пени", order: 27 },
+  { name: "Права на результаты интеллектуальной деятельности", order: 28 },
+  { name: "Требования к упаковке и маркировке", order: 29 },
+  { name: "Условия поставки и логистика", order: 30 },
+];
+
+// Блоки, для которых приоритетным источником является Проект контракта (договора)
+const CONTRACT_PRIORITY_BLOCKS = [
+  "Ответственность сторон",
+  "Расторжение контракта",
+  "Форс-мажор",
+  "Изменение условий контракта",
+  "Разрешение споров",
+  "Порядок оплаты",
+  "Гарантийные обязательства",
+  "Штрафы и пени",
+  "Права на результаты интеллектуальной деятельности",
+  "Конфиденциальность",
+  "Субподряд",
 ];
 
 serve(async (req) => {
@@ -74,7 +95,7 @@ serve(async (req) => {
     if (!files || files.length === 0) throw new Error("No files found");
 
     // Download and extract text from each file separately
-    const fileTexts: { name: string; text: string; isMain: boolean }[] = [];
+    const fileTexts: { name: string; text: string; isMain: boolean; isContract: boolean }[] = [];
     for (const file of files) {
       try {
         const { data: fileData } = await supabase.storage
@@ -87,10 +108,12 @@ serve(async (req) => {
           const isMain = nameLower.includes("документация") || nameLower.includes("dokumentaciya") ||
             nameLower.includes("основн") || nameLower.includes("извещение") ||
             nameLower.includes("тз") || nameLower.includes("техническое задание");
-          fileTexts.push({ name: file.file_name, text: text.substring(0, 50000), isMain });
+          const isContract = nameLower.includes("контракт") || nameLower.includes("договор") ||
+            nameLower.includes("проект контракта") || nameLower.includes("проект договора");
+          fileTexts.push({ name: file.file_name, text: text.substring(0, 50000), isMain, isContract });
         }
       } catch (e) {
-        fileTexts.push({ name: file.file_name, text: "(не удалось извлечь текст)", isMain: false });
+        fileTexts.push({ name: file.file_name, text: "(не удалось извлечь текст)", isMain: false, isContract: false });
       }
     }
 
@@ -99,8 +122,10 @@ serve(async (req) => {
       fileTexts[0].isMain = true;
     }
 
-    // Sort: main file first
-    fileTexts.sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0));
+    const hasContractFile = fileTexts.some(f => f.isContract);
+
+    // Sort: main file first, then contract
+    fileTexts.sort((a, b) => (b.isMain ? 2 : b.isContract ? 1 : 0) - (a.isMain ? 2 : a.isContract ? 1 : 0));
 
     // Update status to analyzing
     await supabase.from("analyses").update({ status: "analyzing" }).eq("id", analysisId);
@@ -111,18 +136,22 @@ serve(async (req) => {
     const blocksListStr = ANALYSIS_BLOCKS.map(b => `${b.order}. ${b.name}`).join("\n");
 
     // Build file listing for AI with clear labels
-    const filesListing = fileTexts.map(f =>
-      `\n\n=== ФАЙЛ${f.isMain ? " (ОСНОВНОЙ)" : ""}: ${f.name} ===\n${f.text}`
-    ).join("");
+    const filesListing = fileTexts.map(f => {
+      let label = f.isMain ? " (ОСНОВНОЙ — ДОКУМЕНТАЦИЯ)" : f.isContract ? " (ПРОЕКТ КОНТРАКТА/ДОГОВОРА)" : "";
+      return `\n\n=== ФАЙЛ${label}: ${f.name} ===\n${f.text}`;
+    }).join("");
+
+    const contractBlocksStr = CONTRACT_PRIORITY_BLOCKS.map(b => `"${b}"`).join(", ");
 
     const systemPrompt = `Ты — эксперт по проверке тендерной документации в России. Анализируй документацию по ${procType}.
 
 ВАЖНО — ИНСТРУКЦИЯ ПО РАБОТЕ С НЕСКОЛЬКИМИ ФАЙЛАМИ:
 1. Проанализируй КАЖДЫЙ файл по отдельности по всем блокам проверки.
 2. Если один и тот же риск или тема встречается в нескольких файлах — ОБЪЕДИНИ их в один результат по данному блоку.
-3. Основной файл (помечен как "ОСНОВНОЙ") имеет приоритет: если в нём и во вспомогательном файле есть противоречия — бери формулировку из основного.
-4. В поле "details" указывай, из какого файла взята информация (например: "Из документации: ..., Из проекта контракта: ...").
-5. Итоговый результат — ОДИН набор из ${ANALYSIS_BLOCKS.length} блоков, без дублирования.
+3. Основной файл (помечен как "ОСНОВНОЙ — ДОКУМЕНТАЦИЯ") имеет приоритет для большинства блоков.
+4. ${hasContractFile ? `КРИТИЧЕСКИ ВАЖНО: Для следующих блоков ПРИОРИТЕТНЫМ источником является файл "ПРОЕКТ КОНТРАКТА/ДОГОВОРА": ${contractBlocksStr}. Именно из проекта контракта бери основную информацию по этим блокам. Если есть противоречия с другими файлами — приоритет у проекта контракта.` : "Если проект контракта отсутствует среди файлов, анализируй контрактные блоки по доступной документации и отметь в details, что проект контракта не был предоставлен."}
+5. В поле "details" указывай, из какого файла взята информация (например: "Из проекта контракта: ..., Из документации: ...").
+6. Итоговый результат — ОДИН набор из ${ANALYSIS_BLOCKS.length} блоков, без дублирования.
 
 Проверь по следующим ${ANALYSIS_BLOCKS.length} блокам:
 ${blocksListStr}
