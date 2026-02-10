@@ -264,19 +264,23 @@ const AnalysisResults = () => {
             </div>
 
             {/* Bottom navigation */}
-            <div className="flex justify-between items-center pt-4 border-t">
-              <Link to={`/analysis/${id}/documents`}>
-                <Button variant="outline" className="gap-2">
-                  <ClipboardList className="h-4 w-4" />
-                  Требуемые документы для участия
-                </Button>
-              </Link>
-              <Link to="/analysis/new">
-                <Button className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Новый анализ
-                </Button>
-              </Link>
+            <div className="flex flex-col gap-4 pt-4 border-t">
+              <div className="flex justify-start">
+                <Link to={`/analysis/${id}/participant`}>
+                  <Button variant="outline" className="gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Требуемые документы для участия
+                  </Button>
+                </Link>
+              </div>
+              <div className="flex justify-center">
+                <Link to="/analysis/new">
+                  <Button className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Новый анализ
+                  </Button>
+                </Link>
+              </div>
             </div>
           </>
         )}

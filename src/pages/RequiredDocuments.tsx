@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +33,8 @@ const categoryConfig: Record<string, { label: string; icon: React.ElementType; d
 
 const RequiredDocuments = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const selectedType = searchParams.get("type");
   const [categories, setCategories] = useState<DocCategory[]>([]);
   const [analysisTitle, setAnalysisTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -67,8 +69,10 @@ const RequiredDocuments = () => {
     );
   }
 
-  const availableCategories = categories.filter(c => c.documents && c.documents.length > 0);
-  const defaultTab = availableCategories.length > 0 ? availableCategories[0].category : "enterprise";
+  const availableCategories = selectedType
+    ? categories.filter(c => c.category === selectedType && c.documents && c.documents.length > 0)
+    : categories.filter(c => c.documents && c.documents.length > 0);
+  const defaultTab = availableCategories.length > 0 ? availableCategories[0].category : (selectedType || "enterprise");
 
   return (
     <AppLayout>
@@ -152,19 +156,23 @@ const RequiredDocuments = () => {
         )}
 
         {/* Bottom navigation */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <Link to={`/analysis/${id}`}>
-            <Button variant="outline" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Назад к результатам
-            </Button>
-          </Link>
-          <Link to="/analysis/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Новый анализ
-            </Button>
-          </Link>
+        <div className="flex flex-col gap-4 pt-4 border-t">
+          <div className="flex justify-start">
+            <Link to={`/analysis/${id}/participant`}>
+              <Button variant="outline" className="gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Назад к выбору участника
+              </Button>
+            </Link>
+          </div>
+          <div className="flex justify-center">
+            <Link to="/analysis/new">
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Новый анализ
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     </AppLayout>
