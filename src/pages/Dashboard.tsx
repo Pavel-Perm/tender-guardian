@@ -6,7 +6,19 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileSearch, AlertTriangle, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Plus, FileSearch, AlertTriangle, CheckCircle, XCircle, Clock, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type Analysis = {
   id: string;
@@ -40,6 +52,42 @@ const Dashboard = () => {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, ok: 0, warning: 0, critical: 0 });
+  const { toast } = useToast();
+
+  const handleDelete = async (e: React.MouseEvent, analysisId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Delete related files from storage
+    const { data: files } = await supabase
+      .from("analysis_files")
+      .select("file_path")
+      .eq("analysis_id", analysisId);
+
+    if (files && files.length > 0) {
+      await supabase.storage.from("documents").remove(files.map(f => f.file_path));
+    }
+
+    // Delete analysis (cascades to results & files via FK)
+    const { error } = await supabase.from("analyses").delete().eq("id", analysisId);
+
+    if (error) {
+      toast({ title: "Ошибка", description: "Не удалось удалить анализ", variant: "destructive" });
+      return;
+    }
+
+    setAnalyses(prev => {
+      const updated = prev.filter(a => a.id !== analysisId);
+      setStats({
+        total: updated.length,
+        ok: updated.filter(a => a.overall_risk === "ok").length,
+        warning: updated.filter(a => a.overall_risk === "warning").length,
+        critical: updated.filter(a => a.overall_risk === "critical").length,
+      });
+      return updated;
+    });
+    toast({ title: "Удалено", description: "Анализ успешно удалён" });
+  };
 
   useEffect(() => {
     const fetchAnalyses = async () => {
@@ -159,7 +207,38 @@ const Dashboard = () => {
                           <span>{new Date(a.created_at).toLocaleDateString("ru-RU")}</span>
                         </div>
                       </div>
-                      {riskBadge(a.overall_risk)}
+                      <div className="flex items-center gap-3">
+                        {riskBadge(a.overall_risk)}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Удалить анализ?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                «{a.title}» будет удалён вместе со всеми файлами и результатами. Это действие необратимо.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Отмена</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={(e) => handleDelete(e, a.id)}
+                              >
+                                Удалить
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </div>
                   </Link>
                 ))}
