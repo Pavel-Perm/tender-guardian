@@ -156,11 +156,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       is_own_analysis: { Args: { _analysis_id: string }; Returns: boolean }
     }
     Enums: {
@@ -170,6 +198,7 @@ export type Database = {
         | "analyzing"
         | "completed"
         | "failed"
+      app_role: "admin" | "moderator" | "user"
       procurement_type: "44-fz" | "223-fz" | "commercial"
       risk_level: "ok" | "warning" | "critical"
     }
@@ -306,6 +335,7 @@ export const Constants = {
         "completed",
         "failed",
       ],
+      app_role: ["admin", "moderator", "user"],
       procurement_type: ["44-fz", "223-fz", "commercial"],
       risk_level: ["ok", "warning", "critical"],
     },
