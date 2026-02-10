@@ -13,6 +13,7 @@ import AnalysisResults from "./pages/AnalysisResults";
 import RequiredDocuments from "./pages/RequiredDocuments";
 import Profile from "./pages/Profile";
 import AdminPanel from "./pages/AdminPanel";
+import ParticipantType from "./pages/ParticipantType";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/analysis/new" element={<ProtectedRoute><NewAnalysis /></ProtectedRoute>} />
             <Route path="/analysis/:id" element={<ProtectedRoute><AnalysisResults /></ProtectedRoute>} />
+            <Route path="/analysis/:id/participant" element={<ProtectedRoute><ParticipantType /></ProtectedRoute>} />
             <Route path="/analysis/:id/documents" element={<ProtectedRoute><RequiredDocuments /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
