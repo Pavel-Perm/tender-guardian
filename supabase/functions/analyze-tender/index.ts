@@ -303,6 +303,8 @@ ${blocksListStr}
             }));
 
           if (docsToInsert.length > 0) {
+            // Delete old records before inserting new ones
+            await supabase.from("analysis_required_documents").delete().eq("analysis_id", analysisId);
             await supabase.from("analysis_required_documents").insert(docsToInsert);
           }
         } catch (parseErr) {
