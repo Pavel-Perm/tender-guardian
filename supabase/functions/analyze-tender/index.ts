@@ -73,8 +73,8 @@ serve(async (req) => {
 
     if (!files || files.length === 0) throw new Error("No files found");
 
-    // Download and extract text from files
-    let allText = "";
+    // Download and extract text from each file separately
+    const fileTexts: { name: string; text: string; isMain: boolean }[] = [];
     for (const file of files) {
       try {
         const { data: fileData } = await supabase.storage
@@ -83,14 +83,24 @@ serve(async (req) => {
 
         if (fileData) {
           const text = await fileData.text();
-          // For binary files this won't be perfect, but for text-based docs it'll work
-          // A production system would use proper parsers
-          allText += `\n\n--- Файл: ${file.file_name} ---\n${text.substring(0, 50000)}`;
+          const nameLower = file.file_name.toLowerCase();
+          const isMain = nameLower.includes("документация") || nameLower.includes("dokumentaciya") ||
+            nameLower.includes("основн") || nameLower.includes("извещение") ||
+            nameLower.includes("тз") || nameLower.includes("техническое задание");
+          fileTexts.push({ name: file.file_name, text: text.substring(0, 50000), isMain });
         }
       } catch (e) {
-        allText += `\n\n--- Файл: ${file.file_name} --- (не удалось извлечь текст)`;
+        fileTexts.push({ name: file.file_name, text: "(не удалось извлечь текст)", isMain: false });
       }
     }
+
+    // If no file was detected as main, treat the first/largest as main
+    if (!fileTexts.some(f => f.isMain) && fileTexts.length > 0) {
+      fileTexts[0].isMain = true;
+    }
+
+    // Sort: main file first
+    fileTexts.sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0));
 
     // Update status to analyzing
     await supabase.from("analyses").update({ status: "analyzing" }).eq("id", analysisId);
@@ -100,18 +110,30 @@ serve(async (req) => {
 
     const blocksListStr = ANALYSIS_BLOCKS.map(b => `${b.order}. ${b.name}`).join("\n");
 
-    const systemPrompt = `Ты — эксперт по проверке тендерной документации в России. Анализируй документацию по ${procType} на предмет типовых ошибок и рисков.
+    // Build file listing for AI with clear labels
+    const filesListing = fileTexts.map(f =>
+      `\n\n=== ФАЙЛ${f.isMain ? " (ОСНОВНОЙ)" : ""}: ${f.name} ===\n${f.text}`
+    ).join("");
 
-Проверь документацию по следующим ${ANALYSIS_BLOCKS.length} блокам:
+    const systemPrompt = `Ты — эксперт по проверке тендерной документации в России. Анализируй документацию по ${procType}.
+
+ВАЖНО — ИНСТРУКЦИЯ ПО РАБОТЕ С НЕСКОЛЬКИМИ ФАЙЛАМИ:
+1. Проанализируй КАЖДЫЙ файл по отдельности по всем блокам проверки.
+2. Если один и тот же риск или тема встречается в нескольких файлах — ОБЪЕДИНИ их в один результат по данному блоку.
+3. Основной файл (помечен как "ОСНОВНОЙ") имеет приоритет: если в нём и во вспомогательном файле есть противоречия — бери формулировку из основного.
+4. В поле "details" указывай, из какого файла взята информация (например: "Из документации: ..., Из проекта контракта: ...").
+5. Итоговый результат — ОДИН набор из ${ANALYSIS_BLOCKS.length} блоков, без дублирования.
+
+Проверь по следующим ${ANALYSIS_BLOCKS.length} блокам:
 ${blocksListStr}
 
-Для КАЖДОГО блока верни JSON-объект с полями:
-- block_name: название блока (точно как в списке выше)
+Для КАЖДОГО блока верни JSON-объект:
+- block_name: название блока (точно как в списке)
 - block_order: номер блока
 - status: "ok" | "warning" | "critical"
 - risk_description: описание найденного риска или "Нарушений не обнаружено"
 - recommendation: рекомендация по исправлению (если есть риск)
-- details: подробное описание с цитатами из документации
+- details: подробное описание с указанием, из каких файлов получена информация
 
 Отвечай ТОЛЬКО валидным JSON-массивом из ${ANALYSIS_BLOCKS.length} объектов. Без markdown, без пояснений вне JSON.`;
 
@@ -126,7 +148,7 @@ ${blocksListStr}
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Проанализируй следующую тендерную документацию:\n\n${allText.substring(0, 100000)}` },
+          { role: "user", content: `Проанализируй следующую тендерную документацию (${fileTexts.length} файлов):\n${filesListing.substring(0, 120000)}` },
         ],
       }),
     });
