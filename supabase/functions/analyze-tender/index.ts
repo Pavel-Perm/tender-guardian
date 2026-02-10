@@ -241,6 +241,72 @@ ${blocksListStr}
       overall_risk: overallRisk,
     }).eq("id", analysisId);
 
+    // --- Extract required participation documents ---
+    try {
+      const docsPrompt = `Ты — эксперт по тендерной документации в России (${procType}).
+
+На основе предоставленной документации составь ПОЛНЫЙ список документов, которые участник закупки должен приложить в составе заявки.
+
+Раздели документы на 3 категории:
+1. "enterprise" — для юридических лиц (ООО, АО и т.д.)
+2. "ip" — для индивидуальных предпринимателей
+3. "self_employed" — для самозанятых (плательщиков НПД)
+
+Для каждой категории перечисли документы в виде массива строк.
+
+Отвечай ТОЛЬКО валидным JSON-объектом в формате:
+{
+  "enterprise": ["Документ 1", "Документ 2", ...],
+  "ip": ["Документ 1", "Документ 2", ...],
+  "self_employed": ["Документ 1", "Документ 2", ...]
+}
+
+Если для какой-то категории участники не допускаются — укажи пустой массив.
+Без markdown, без пояснений вне JSON.`;
+
+      const docsResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: docsPrompt },
+            { role: "user", content: `Документация (${fileTexts.length} файлов):\n${filesListing.substring(0, 80000)}` },
+          ],
+        }),
+      });
+
+      if (docsResponse.ok) {
+        const docsData = await docsResponse.json();
+        let docsContent = docsData.choices?.[0]?.message?.content || "";
+        docsContent = docsContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+        try {
+          const docsList = JSON.parse(docsContent);
+          const categories = ["enterprise", "ip", "self_employed"];
+          const docsToInsert = categories
+            .filter(cat => Array.isArray(docsList[cat]))
+            .map(cat => ({
+              analysis_id: analysisId,
+              category: cat,
+              documents: docsList[cat],
+            }));
+
+          if (docsToInsert.length > 0) {
+            await supabase.from("analysis_required_documents").insert(docsToInsert);
+          }
+        } catch (parseErr) {
+          console.error("Failed to parse required docs:", parseErr);
+        }
+      }
+    } catch (docsErr) {
+      console.error("Required docs extraction error:", docsErr);
+      // Non-critical — don't fail the whole analysis
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
