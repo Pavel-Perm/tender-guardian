@@ -198,8 +198,8 @@ const Dashboard = () => {
             ) : (
               <div className="space-y-2">
                 {analyses.map((a) => (
-                  <Link key={a.id} to={`/analysis/${a.id}`} className="block">
-                    <div className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted/50">
+                  <div key={a.id} className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted/50">
+                    <Link to={`/analysis/${a.id}`} className="flex-1 min-w-0">
                       <div className="space-y-1">
                         <p className="font-medium">{a.title}</p>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -207,40 +207,39 @@ const Dashboard = () => {
                           <span>{new Date(a.created_at).toLocaleDateString("ru-RU")}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        {riskBadge(a.overall_risk)}
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    </Link>
+                    <div className="flex items-center gap-3 ml-3">
+                      {riskBadge(a.overall_risk)}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Удалить анализ?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              «{a.title}» будет удалён вместе со всеми файлами и результатами. Это действие необратимо.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={(e) => handleDelete(e, a.id)}
                             >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Удалить анализ?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                «{a.title}» будет удалён вместе со всеми файлами и результатами. Это действие необратимо.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Отмена</AlertDialogCancel>
-                              <AlertDialogAction
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={(e) => handleDelete(e, a.id)}
-                              >
-                                Удалить
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
+                              Удалить
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             )}
