@@ -85,6 +85,38 @@ export type Database = {
           },
         ]
       }
+      analysis_required_documents: {
+        Row: {
+          analysis_id: string
+          category: string
+          created_at: string
+          documents: Json
+          id: string
+        }
+        Insert: {
+          analysis_id: string
+          category: string
+          created_at?: string
+          documents?: Json
+          id?: string
+        }
+        Update: {
+          analysis_id?: string
+          category?: string
+          created_at?: string
+          documents?: Json
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_required_documents_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analysis_results: {
         Row: {
           analysis_id: string
