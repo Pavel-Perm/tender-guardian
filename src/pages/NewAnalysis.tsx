@@ -120,7 +120,10 @@ const NewAnalysis = () => {
         body: { analysisId: analysis.id },
       });
 
-      if (analyzeError) throw analyzeError;
+      if (analyzeError) {
+        const errMsg = analyzeResult?.error || analyzeError.message || "Ошибка при анализе";
+        throw new Error(errMsg);
+      }
 
       setStage("Анализ завершён!");
       setProgress(100);

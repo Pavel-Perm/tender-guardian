@@ -185,13 +185,18 @@ ${blocksListStr}
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
       console.error("AI error:", aiResponse.status, errText);
-      if (aiResponse.status === 429) {
-        await supabase.from("analyses").update({ status: "failed" }).eq("id", analysisId);
-        throw new Error("Превышен лимит запросов, попробуйте позже");
-      }
+      await supabase.from("analyses").update({ status: "failed" }).eq("id", analysisId);
       if (aiResponse.status === 402) {
-        await supabase.from("analyses").update({ status: "failed" }).eq("id", analysisId);
-        throw new Error("Необходимо пополнить баланс AI");
+        return new Response(JSON.stringify({ error: "Необходимо пополнить баланс AI. Перейдите в Settings → Workspace → Usage для пополнения." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (aiResponse.status === 429) {
+        return new Response(JSON.stringify({ error: "Превышен лимит запросов к AI. Пожалуйста, подождите минуту и попробуйте снова." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
       throw new Error("AI gateway error");
     }
