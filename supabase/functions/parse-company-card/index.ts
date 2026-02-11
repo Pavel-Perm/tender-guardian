@@ -110,9 +110,21 @@ ${tenderContext ? "Также используй тендерную докуме
     });
 
     if (!aiResponse.ok) {
-      if (aiResponse.status === 429) throw new Error("Превышен лимит запросов, попробуйте позже");
-      if (aiResponse.status === 402) throw new Error("Необходимо пополнить баланс AI");
-      throw new Error("AI gateway error");
+      const errText = await aiResponse.text();
+      console.error("AI gateway error:", aiResponse.status, errText);
+      if (aiResponse.status === 429) {
+        return new Response(JSON.stringify({ error: "Превышен лимит запросов к AI. Попробуйте позже." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (aiResponse.status === 402) {
+        return new Response(JSON.stringify({ error: "Необходимо пополнить баланс AI. Перейдите в Settings → Workspace → Usage для пополнения." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "Ошибка AI-сервиса" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const aiData = await aiResponse.json();
