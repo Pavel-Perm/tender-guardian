@@ -121,7 +121,11 @@ const NewAnalysis = () => {
       });
 
       if (analyzeError) {
-        const errMsg = analyzeResult?.error || analyzeError.message || "Ошибка при анализе";
+        // supabase.functions.invoke puts the response body in data even on error status
+        const errMsg = analyzeResult?.error 
+          || (typeof analyzeError === 'object' && 'context' in analyzeError ? analyzeError.context?.body?.error : null)
+          || analyzeError.message 
+          || "Ошибка при анализе";
         throw new Error(errMsg);
       }
 
