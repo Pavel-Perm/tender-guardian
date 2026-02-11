@@ -161,6 +161,81 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          actual_address: string | null
+          bank_account: string | null
+          bank_bik: string | null
+          bank_corr_account: string | null
+          bank_name: string | null
+          created_at: string
+          director_name: string | null
+          director_position: string | null
+          email: string | null
+          full_name: string
+          id: string
+          inn: string
+          kpp: string | null
+          legal_address: string | null
+          ogrn: string | null
+          okved: string | null
+          phone: string | null
+          short_name: string | null
+          tax_system: string | null
+          updated_at: string
+          user_id: string
+          vat_rate: string | null
+        }
+        Insert: {
+          actual_address?: string | null
+          bank_account?: string | null
+          bank_bik?: string | null
+          bank_corr_account?: string | null
+          bank_name?: string | null
+          created_at?: string
+          director_name?: string | null
+          director_position?: string | null
+          email?: string | null
+          full_name: string
+          id?: string
+          inn: string
+          kpp?: string | null
+          legal_address?: string | null
+          ogrn?: string | null
+          okved?: string | null
+          phone?: string | null
+          short_name?: string | null
+          tax_system?: string | null
+          updated_at?: string
+          user_id: string
+          vat_rate?: string | null
+        }
+        Update: {
+          actual_address?: string | null
+          bank_account?: string | null
+          bank_bik?: string | null
+          bank_corr_account?: string | null
+          bank_name?: string | null
+          created_at?: string
+          director_name?: string | null
+          director_position?: string | null
+          email?: string | null
+          full_name?: string
+          id?: string
+          inn?: string
+          kpp?: string | null
+          legal_address?: string | null
+          ogrn?: string | null
+          okved?: string | null
+          phone?: string | null
+          short_name?: string | null
+          tax_system?: string | null
+          updated_at?: string
+          user_id?: string
+          vat_rate?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           company: string | null

@@ -1,1 +1,4 @@
 project_id = "dbumedsfgvrmkrpsuuqp"
+
+[functions.parse-company-card]
+verify_jwt = false

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, User, Briefcase, FileCheck, Plus, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, User, Briefcase, FileCheck, Plus, Loader2, ChevronRight } from "lucide-react";
 
 type DocCategory = {
   category: string;
@@ -156,23 +156,19 @@ const RequiredDocuments = () => {
         )}
 
         {/* Bottom navigation */}
-        <div className="flex flex-col gap-4 pt-4 border-t">
-          <div className="flex justify-start">
-            <Link to={`/analysis/${id}/participant`}>
-              <Button variant="outline" className="gap-2">
-                <ArrowLeft className="h-4 w-4" />
-                Назад к выбору участника
-              </Button>
-            </Link>
-          </div>
-          <div className="flex justify-center">
-            <Link to="/analysis/new">
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Новый анализ
-              </Button>
-            </Link>
-          </div>
+        <div className="flex justify-between items-center pt-4 border-t">
+          <Link to={`/analysis/${id}/participant`}>
+            <Button variant="outline" className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Назад к выбору участника
+            </Button>
+          </Link>
+          <Link to={`/analysis/${id}/bid-preparation?type=${selectedType || "enterprise"}`}>
+            <Button className="gap-2">
+              Приступить к подготовке заявки
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </Link>
         </div>
       </div>
     </AppLayout>
