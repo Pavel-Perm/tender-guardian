@@ -70,7 +70,12 @@ const BidPreparation = () => {
 
   const [activeTab, setActiveTab] = useState("inn");
   const [innSearch, setInnSearch] = useState("");
+  const [innError, setInnError] = useState("");
   const [searching, setSearching] = useState(false);
+
+  const isEntity = participantType === "enterprise";
+  const requiredInnLength = isEntity ? 10 : 12;
+  const innLengthLabel = isEntity ? "10 цифр (юр. лицо)" : "12 цифр (ИП / физ. лицо)";
   const [foundCompany, setFoundCompany] = useState<CompanyData | null>(null);
   const [company, setCompany] = useState<CompanyData>(emptyCompany);
   const [saving, setSaving] = useState(false);
@@ -81,6 +86,11 @@ const BidPreparation = () => {
   // Search company by INN in DB
   const searchByInn = useCallback(async () => {
     if (!innSearch.trim()) return;
+    if (innSearch.length !== requiredInnLength) {
+      setInnError(`ИНН должен содержать ${innLengthLabel}`);
+      return;
+    }
+    setInnError("");
     setSearching(true);
     setFoundCompany(null);
 
@@ -242,18 +252,28 @@ const BidPreparation = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Введите ИНН организации"
-                    value={innSearch}
-                    onChange={e => setInnSearch(e.target.value.replace(/\D/g, "").slice(0, 12))}
-                    onKeyDown={e => e.key === "Enter" && searchByInn()}
-                    maxLength={12}
-                  />
-                  <Button onClick={searchByInn} disabled={searching || !innSearch.trim()}>
-                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                    Найти
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder={`Введите ИНН (${innLengthLabel})`}
+                      value={innSearch}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, "").slice(0, requiredInnLength);
+                        setInnSearch(val);
+                        if (innError) setInnError("");
+                      }}
+                      onKeyDown={e => e.key === "Enter" && searchByInn()}
+                      maxLength={requiredInnLength}
+                    />
+                    <Button onClick={searchByInn} disabled={searching || !innSearch.trim()}>
+                      {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      Найти
+                    </Button>
+                  </div>
+                  {innError && <p className="text-sm text-destructive">{innError}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    {isEntity ? "Для юридических лиц ИНН — 10 цифр" : "Для ИП и физических лиц ИНН — 12 цифр"}
+                  </p>
                 </div>
 
                 {foundCompany && (
@@ -273,7 +293,7 @@ const BidPreparation = () => {
                   </Card>
                 )}
 
-                {!foundCompany && !searching && innSearch.length >= 10 && (
+                {!foundCompany && !searching && innSearch.length === requiredInnLength && (
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
                       Организация не найдена. Заполните данные вручную или загрузите карточку.
@@ -355,7 +375,7 @@ const BidPreparation = () => {
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="inn">ИНН *</Label>
-                          <Input id="inn" value={company.inn} onChange={e => updateField("inn", e.target.value.replace(/\D/g, "").slice(0, 12))} maxLength={12} />
+                          <Input id="inn" value={company.inn} onChange={e => updateField("inn", e.target.value.replace(/\D/g, "").slice(0, requiredInnLength))} maxLength={requiredInnLength} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="kpp">КПП</Label>
