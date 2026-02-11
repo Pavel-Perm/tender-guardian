@@ -18,6 +18,9 @@ type CompanyData = {
   inn: string;
   kpp: string;
   ogrn: string;
+  okpo: string;
+  okato: string;
+  oktmo: string;
   full_name: string;
   short_name: string;
   legal_address: string;
@@ -30,16 +33,19 @@ type CompanyData = {
   bank_bik: string;
   bank_account: string;
   bank_corr_account: string;
+  bank_inn: string;
+  bank_kpp: string;
   okved: string;
   tax_system: string;
   vat_rate: string;
 };
 
 const emptyCompany: CompanyData = {
-  inn: "", kpp: "", ogrn: "", full_name: "", short_name: "",
+  inn: "", kpp: "", ogrn: "", okpo: "", okato: "", oktmo: "",
+  full_name: "", short_name: "",
   legal_address: "", actual_address: "", director_name: "", director_position: "",
   phone: "", email: "", bank_name: "", bank_bik: "", bank_account: "",
-  bank_corr_account: "", okved: "", tax_system: "", vat_rate: "",
+  bank_corr_account: "", bank_inn: "", bank_kpp: "", okved: "", tax_system: "", vat_rate: "",
 };
 
 const vatOptions = [
@@ -168,6 +174,9 @@ const BidPreparation = () => {
         inn: company.inn.trim(),
         kpp: company.kpp || null,
         ogrn: company.ogrn || null,
+        okpo: company.okpo || null,
+        okato: company.okato || null,
+        oktmo: company.oktmo || null,
         full_name: company.full_name,
         short_name: company.short_name || null,
         legal_address: company.legal_address || null,
@@ -180,6 +189,8 @@ const BidPreparation = () => {
         bank_bik: company.bank_bik || null,
         bank_account: company.bank_account || null,
         bank_corr_account: company.bank_corr_account || null,
+        bank_inn: company.bank_inn || null,
+        bank_kpp: company.bank_kpp || null,
         okved: company.okved || null,
         tax_system: company.tax_system || null,
         vat_rate: company.vat_rate || null,
@@ -382,8 +393,20 @@ const BidPreparation = () => {
                           <Input id="kpp" value={company.kpp} onChange={e => updateField("kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="ogrn">ОГРН</Label>
+                          <Label htmlFor="ogrn">ОГРН / ОГРНИП</Label>
                           <Input id="ogrn" value={company.ogrn} onChange={e => updateField("ogrn", e.target.value.replace(/\D/g, "").slice(0, 15))} maxLength={15} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="okpo">ОКПО</Label>
+                          <Input id="okpo" value={company.okpo} onChange={e => updateField("okpo", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="okato">ОКАТО</Label>
+                          <Input id="okato" value={company.okato} onChange={e => updateField("okato", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="oktmo">ОКТМО</Label>
+                          <Input id="oktmo" value={company.oktmo} onChange={e => updateField("oktmo", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="okved">Основной ОКВЭД</Label>
@@ -462,6 +485,14 @@ const BidPreparation = () => {
                         <div className="space-y-2">
                           <Label htmlFor="bank_corr_account">Корреспондентский счёт</Label>
                           <Input id="bank_corr_account" value={company.bank_corr_account} onChange={e => updateField("bank_corr_account", e.target.value.replace(/\D/g, "").slice(0, 20))} maxLength={20} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_inn">ИНН банка</Label>
+                          <Input id="bank_inn" value={company.bank_inn} onChange={e => updateField("bank_inn", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_kpp">КПП банка</Label>
+                          <Input id="bank_kpp" value={company.bank_kpp} onChange={e => updateField("bank_kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                       </div>
                     </div>

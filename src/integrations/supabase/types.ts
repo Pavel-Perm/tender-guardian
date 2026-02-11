@@ -167,6 +167,8 @@ export type Database = {
           bank_account: string | null
           bank_bik: string | null
           bank_corr_account: string | null
+          bank_inn: string | null
+          bank_kpp: string | null
           bank_name: string | null
           created_at: string
           director_name: string | null
@@ -178,6 +180,9 @@ export type Database = {
           kpp: string | null
           legal_address: string | null
           ogrn: string | null
+          okato: string | null
+          okpo: string | null
+          oktmo: string | null
           okved: string | null
           phone: string | null
           short_name: string | null
@@ -191,6 +196,8 @@ export type Database = {
           bank_account?: string | null
           bank_bik?: string | null
           bank_corr_account?: string | null
+          bank_inn?: string | null
+          bank_kpp?: string | null
           bank_name?: string | null
           created_at?: string
           director_name?: string | null
@@ -202,6 +209,9 @@ export type Database = {
           kpp?: string | null
           legal_address?: string | null
           ogrn?: string | null
+          okato?: string | null
+          okpo?: string | null
+          oktmo?: string | null
           okved?: string | null
           phone?: string | null
           short_name?: string | null
@@ -215,6 +225,8 @@ export type Database = {
           bank_account?: string | null
           bank_bik?: string | null
           bank_corr_account?: string | null
+          bank_inn?: string | null
+          bank_kpp?: string | null
           bank_name?: string | null
           created_at?: string
           director_name?: string | null
@@ -226,6 +238,9 @@ export type Database = {
           kpp?: string | null
           legal_address?: string | null
           ogrn?: string | null
+          okato?: string | null
+          okpo?: string | null
+          oktmo?: string | null
           okved?: string | null
           phone?: string | null
           short_name?: string | null
