@@ -2,3 +2,6 @@ project_id = "dbumedsfgvrmkrpsuuqp"
 
 [functions.parse-company-card]
 verify_jwt = false
+
+[functions.generate-bid-documents]
+verify_jwt = false
