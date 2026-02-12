@@ -84,11 +84,21 @@ ${results.map(r => `${statusEmoji(r.status)} ${r.block_name}: ${r.risk_descripti
         }),
       });
 
-      if (!aiResponse.ok) {
-        if (aiResponse.status === 429) throw new Error("Превышен лимит запросов");
-        if (aiResponse.status === 402) throw new Error("Необходимо пополнить баланс");
-        throw new Error("AI error");
-      }
+       if (!aiResponse.ok) {
+         if (aiResponse.status === 429) {
+           return new Response(JSON.stringify({ error: "Превышен лимит запросов. Попробуйте позже." }), {
+             status: 429,
+             headers: { ...corsHeaders, "Content-Type": "application/json" },
+           });
+         }
+         if (aiResponse.status === 402) {
+           return new Response(JSON.stringify({ error: "Необходимо пополнить баланс AI. Перейдите в Settings → Workspace → Usage для пополнения." }), {
+             status: 402,
+             headers: { ...corsHeaders, "Content-Type": "application/json" },
+           });
+         }
+         throw new Error("AI error");
+       }
 
       const aiData = await aiResponse.json();
       let html = aiData.choices?.[0]?.message?.content || "";
