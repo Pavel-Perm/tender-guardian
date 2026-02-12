@@ -138,7 +138,10 @@ ${tenderContext ? "Также используй тендерную докуме
 
     let company;
     try {
-      company = JSON.parse(content);
+      // Try to find JSON in response (sometimes AI adds extra text)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      company = JSON.parse(jsonStr);
     } catch {
       console.error("Failed to parse AI response:", content.substring(0, 500));
       throw new Error("Не удалось извлечь данные из документа");
