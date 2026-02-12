@@ -72,13 +72,19 @@ const AnalysisResults = () => {
   }, [id]);
 
   const handleDownload = async (format: "pdf" | "excel") => {
-    setDownloading(format);
-    try {
-      const { data, error } = await supabase.functions.invoke("generate-report", {
-        body: { analysisId: id, format },
-      });
+     setDownloading(format);
+     try {
+       const { data, error } = await supabase.functions.invoke("generate-report", {
+         body: { analysisId: id, format },
+       });
 
-      if (error) throw error;
+       if (error) {
+         const errMsg = data?.error 
+           || (typeof error === 'object' && 'context' in error ? error.context?.body?.error : null)
+           || error.message 
+           || "Ошибка при скачивании";
+         throw new Error(errMsg);
+       }
 
       const base64 = data.file;
       if (format === "pdf") {
