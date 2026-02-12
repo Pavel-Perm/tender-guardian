@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle, ChevronRight } from "lucide-react";
+import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle, ChevronRight, Save } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -90,6 +91,7 @@ const BidPreparation = () => {
   const [parsing, setParsing] = useState(false);
   const [fillMode, setFillMode] = useState<"manual" | "upload" | null>(null);
   const [showHighlight, setShowHighlight] = useState(false);
+  const [sameAddress, setSameAddress] = useState(false);
 
   // CSS class for empty fields that need attention
   const emptyFieldClass = (value: string) => 
@@ -493,11 +495,25 @@ const BidPreparation = () => {
                       <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Адреса</h3>
                       <div className="space-y-2">
                         <Label htmlFor="legal_address">Юридический адрес</Label>
-                        <Input id="legal_address" className={emptyFieldClass(company.legal_address)} value={company.legal_address} onChange={e => updateField("legal_address", e.target.value)} />
+                        <Input id="legal_address" className={emptyFieldClass(company.legal_address)} value={company.legal_address} onChange={e => {
+                          updateField("legal_address", e.target.value);
+                          if (sameAddress) updateField("actual_address", e.target.value);
+                        }} />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="actual_address">Фактический адрес</Label>
-                        <Input id="actual_address" className={emptyFieldClass(company.actual_address)} value={company.actual_address} onChange={e => updateField("actual_address", e.target.value)} />
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="same_address"
+                            checked={sameAddress}
+                            onCheckedChange={(checked) => {
+                              const val = !!checked;
+                              setSameAddress(val);
+                              if (val) updateField("actual_address", company.legal_address);
+                            }}
+                          />
+                          <Label htmlFor="same_address" className="text-sm font-normal cursor-pointer">Совпадает с юридическим адресом</Label>
+                        </div>
+                        <Input id="actual_address" className={emptyFieldClass(company.actual_address)} value={company.actual_address} onChange={e => updateField("actual_address", e.target.value)} disabled={sameAddress} />
                       </div>
                     </div>
 
@@ -560,6 +576,13 @@ const BidPreparation = () => {
                           <Input id="bank_kpp" className={emptyFieldClass(company.bank_kpp)} value={company.bank_kpp} onChange={e => updateField("bank_kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                       </div>
+                    </div>
+                    {/* Save button in details tab */}
+                    <div className="pt-4 border-t">
+                      <Button onClick={saveCompany} disabled={saving || !company.inn || !company.full_name} className="gap-2 w-full sm:w-auto" size="lg">
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                        {saved ? "Сохранено в базу" : "Сохранить реквизиты"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
