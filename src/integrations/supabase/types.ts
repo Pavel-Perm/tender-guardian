@@ -304,6 +304,56 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_documents: {
+        Row: {
+          analysis_id: string
+          created_at: string
+          doc_name: string
+          id: string
+          participant_type: string
+          sections: Json | null
+          signature_block: string | null
+          status: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analysis_id: string
+          created_at?: string
+          doc_name: string
+          id?: string
+          participant_type: string
+          sections?: Json | null
+          signature_block?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analysis_id?: string
+          created_at?: string
+          doc_name?: string
+          id?: string
+          participant_type?: string
+          sections?: Json | null
+          signature_block?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_documents_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           company: string | null

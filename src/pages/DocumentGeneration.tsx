@@ -83,19 +83,46 @@ const DocumentGeneration = () => {
     const fetchData = async () => {
       if (!id || !user) return;
 
-      const [docsRes, resultsRes, analysisRes, companyRes, bidAmountRes] = await Promise.all([
+      const [docsRes, resultsRes, analysisRes, companyRes, bidAmountRes, savedDocsRes] = await Promise.all([
         supabase.from("analysis_required_documents").select("category, documents").eq("analysis_id", id),
         supabase.from("analysis_results").select("block_name, details, risk_description").eq("analysis_id", id).order("block_order"),
         supabase.from("analyses").select("title, procurement_type").eq("id", id).single(),
         supabase.from("companies").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("bid_amounts").select("*").eq("analysis_id", id).maybeSingle(),
+        supabase.from("generated_documents").select("*").eq("analysis_id", id).eq("participant_type", participantType),
       ]);
 
       if (analysisRes.data) setAnalysisTitle(analysisRes.data.title);
 
       const categoryDocs = docsRes.data?.find(d => d.category === participantType);
       const docs = (categoryDocs?.documents as string[]) || [];
-      setDocStates(docs.map(name => ({ name, status: "idle" })));
+
+      // Merge with saved documents from DB
+      const savedMap = new Map<string, any>();
+      if (savedDocsRes.data) {
+        for (const sd of savedDocsRes.data) {
+          savedMap.set(sd.doc_name, sd);
+        }
+      }
+
+      setDocStates(docs.map(name => {
+        const saved = savedMap.get(name);
+        if (saved && (saved.status === "done" || saved.status === "skipped")) {
+          const docState: DocState = {
+            name,
+            status: saved.status as DocState["status"],
+          };
+          if (saved.status === "done" && saved.title && saved.sections) {
+            docState.document = {
+              title: saved.title,
+              sections: saved.sections as { heading: string; content: string }[],
+              signature_block: saved.signature_block || "",
+            };
+          }
+          return docState;
+        }
+        return { name, status: "idle" as const };
+      }));
 
       if (resultsRes.data) {
         const context = resultsRes.data
@@ -112,6 +139,25 @@ const DocumentGeneration = () => {
       setLoading(false);
     };
     fetchData();
+  }, [id, user, participantType]);
+
+  // Save document state to DB
+  const saveDocToDb = useCallback(async (docState: DocState) => {
+    if (!id || !user) return;
+    const sections = docState.editedSections || docState.document?.sections || [];
+    const signature = docState.editedSignature || docState.document?.signature_block || "";
+    const title = docState.document?.title || "";
+
+    await supabase.from("generated_documents").upsert({
+      analysis_id: id,
+      user_id: user.id,
+      doc_name: docState.name,
+      participant_type: participantType,
+      status: docState.status,
+      title,
+      sections: sections as any,
+      signature_block: signature,
+    }, { onConflict: "analysis_id,participant_type,doc_name" });
   }, [id, user, participantType]);
 
   const generateDocument = useCallback(async (docIndex: number) => {
@@ -139,7 +185,10 @@ const DocumentGeneration = () => {
       }
 
       if (data?.document) {
-        setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "done", document: data.document } : d));
+        const newDocState: DocState = { name: docName, status: "done", document: data.document };
+        setDocStates(prev => prev.map((d, i) => i === docIndex ? newDocState : d));
+        // Save to DB
+        saveDocToDb(newDocState);
       } else {
         throw new Error("Пустой ответ от AI");
       }
@@ -147,7 +196,7 @@ const DocumentGeneration = () => {
       setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "error", error: err.message } : d));
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     }
-  }, [id, companyData, tenderContext, bidAmountData, toast]);
+  }, [id, companyData, tenderContext, bidAmountData, toast, saveDocToDb]);
 
   // Amount edit
   const startEditAmount = () => {
@@ -181,6 +230,10 @@ const DocumentGeneration = () => {
     setBidAmountData(updatedBid);
     setEditingAmount(false);
     setDocStates(prev => prev.map(d => ({ ...d, status: "idle", document: undefined, error: undefined })));
+    // Clear saved docs from DB when amount changes
+    if (id) {
+      supabase.from("generated_documents").delete().eq("analysis_id", id).eq("participant_type", participantType);
+    }
     toast({ title: "Сумма обновлена", description: `Новая сумма: ${formatCurrency(newAmount)}. Перегенерируйте документы.` });
   };
 
@@ -193,20 +246,27 @@ const DocumentGeneration = () => {
   };
 
   const saveEdit = () => {
+    let updatedDoc: DocState | null = null;
     setDocStates(prev => prev.map((d, i) => {
       if (i !== currentStep) return d;
-      return {
+      updatedDoc = {
         ...d,
         editedSections: editSections,
         editedSignature: editSignature,
       };
+      return updatedDoc;
     }));
     setEditMode(false);
     toast({ title: "Сохранено", description: "Изменения сохранены" });
+    // Persist to DB
+    if (updatedDoc) saveDocToDb(updatedDoc);
   };
 
   const skipDocument = () => {
-    setDocStates(prev => prev.map((d, i) => i === currentStep ? { ...d, status: "skipped" } : d));
+    const skippedDoc: DocState = { ...docStates[currentStep], status: "skipped" };
+    setDocStates(prev => prev.map((d, i) => i === currentStep ? skippedDoc : d));
+    // Persist to DB
+    saveDocToDb(skippedDoc);
   };
 
   const goNext = () => {
