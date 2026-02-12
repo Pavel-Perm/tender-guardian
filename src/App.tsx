@@ -16,6 +16,7 @@ import AdminPanel from "./pages/AdminPanel";
 import ParticipantType from "./pages/ParticipantType";
 import BidPreparation from "./pages/BidPreparation";
 import DocumentGeneration from "./pages/DocumentGeneration";
+import BidAmount from "./pages/BidAmount";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/analysis/:id/participant" element={<ProtectedRoute><ParticipantType /></ProtectedRoute>} />
             <Route path="/analysis/:id/documents" element={<ProtectedRoute><RequiredDocuments /></ProtectedRoute>} />
             <Route path="/analysis/:id/bid-preparation" element={<ProtectedRoute><BidPreparation /></ProtectedRoute>} />
+            <Route path="/analysis/:id/bid-amount" element={<ProtectedRoute><BidAmount /></ProtectedRoute>} />
             <Route path="/analysis/:id/generate-documents" element={<ProtectedRoute><DocumentGeneration /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />

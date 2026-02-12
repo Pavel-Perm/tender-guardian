@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 type CompanyData = {
   id?: string;
@@ -75,6 +76,7 @@ const BidPreparation = () => {
   const participantType = searchParams.get("type") || "enterprise";
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("inn");
   const [innSearch, setInnSearch] = useState("");
@@ -683,12 +685,25 @@ const BidPreparation = () => {
               Назад к документам
             </Button>
           </Link>
-          <Link to={`/analysis/${id}/generate-documents?type=${participantType}`}>
-            <Button className="gap-2">
-              Генерация документов
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </Link>
+          <Button className="gap-2" onClick={() => {
+            // Validate that requisites and VAT are saved
+            if (!saved) {
+              toast({ title: "Данные не сохранены", description: "Сохраните реквизиты перед переходом к следующему шагу", variant: "destructive" });
+              return;
+            }
+            if (!company.tax_system) {
+              toast({ title: "Не выбрана система налогообложения", description: "Перейдите на вкладку «НДС и итог» и выберите систему налогообложения", variant: "destructive" });
+              return;
+            }
+            if (!company.vat_rate) {
+              toast({ title: "Не выбрана ставка НДС", description: "Перейдите на вкладку «НДС и итог» и выберите ставку НДС", variant: "destructive" });
+              return;
+            }
+            navigate(`/analysis/${id}/bid-amount?type=${participantType}`);
+          }}>
+            Далее — сумма заявки
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </AppLayout>

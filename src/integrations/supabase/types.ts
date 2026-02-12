@@ -161,6 +161,59 @@ export type Database = {
           },
         ]
       }
+      bid_amounts: {
+        Row: {
+          amount: number
+          amount_words: string | null
+          analysis_id: string
+          created_at: string
+          id: string
+          total_with_vat: number
+          total_words: string | null
+          updated_at: string
+          user_id: string
+          vat_amount: number
+          vat_amount_words: string | null
+          vat_rate: string
+        }
+        Insert: {
+          amount: number
+          amount_words?: string | null
+          analysis_id: string
+          created_at?: string
+          id?: string
+          total_with_vat: number
+          total_words?: string | null
+          updated_at?: string
+          user_id: string
+          vat_amount?: number
+          vat_amount_words?: string | null
+          vat_rate: string
+        }
+        Update: {
+          amount?: number
+          amount_words?: string | null
+          analysis_id?: string
+          created_at?: string
+          id?: string
+          total_with_vat?: number
+          total_words?: string | null
+          updated_at?: string
+          user_id?: string
+          vat_amount?: number
+          vat_amount_words?: string | null
+          vat_rate?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_amounts_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: true
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           actual_address: string | null
