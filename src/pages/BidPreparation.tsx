@@ -131,6 +131,17 @@ const BidPreparation = () => {
     setSaved(false);
   };
 
+  // Autosave every 30 seconds
+  useEffect(() => {
+    const autosaveInterval = setInterval(() => {
+      if (company.inn && company.full_name && user && fillMode === "manual") {
+        saveCompany();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(autosaveInterval);
+  }, [company, user, fillMode]);
+
   // Upload company card and parse via AI
   const handleCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
