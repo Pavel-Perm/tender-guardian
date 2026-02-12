@@ -38,12 +38,23 @@ type DocState = {
 type WizardStep = "steps" | "summary";
 
 const DocumentGeneration = () => {
-  const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const participantType = searchParams.get("type") || "enterprise";
-  const { toast } = useToast();
-  const { user } = useAuth();
+   const { id } = useParams<{ id: string }>();
+   const [searchParams] = useSearchParams();
+   const navigate = useNavigate();
+   const participantType = searchParams.get("type") || "enterprise";
+   const { toast } = useToast();
+   const { user } = useAuth();
+
+   // Функция для определения, требует ли документ выписку из ЕГРИП/ЕГРИЮ
+   const isEGRIPDocument = (docName: string): boolean => {
+     const lowerName = docName.toLowerCase();
+     return (
+       lowerName.includes("выписка из егрип") ||
+       lowerName.includes("выписка из егрю") ||
+       lowerName.includes("копия выписки из егрип") ||
+       lowerName.includes("копия выписки из егрю")
+     );
+   };
 
   const [loading, setLoading] = useState(true);
   const [docStates, setDocStates] = useState<DocState[]>([]);
@@ -430,13 +441,33 @@ const DocumentGeneration = () => {
 
                 {/* Action buttons for this document */}
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
-                  {(currentDoc.status === "idle" || currentDoc.status === "error" || currentDoc.status === "skipped") && (
+                  {/* EGRIP/EGRU Document - Show download link instead of generate */}
+                  {isEGRIPDocument(currentDoc.name) && currentDoc.status !== "done" && currentDoc.status !== "skipped" && (
+                    <>
+                      <div className="w-full">
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Инструкция: Перейди на сайт налоговой, введи ИНН и скачай свежую выписку
+                        </p>
+                      </div>
+                      <a href="https://egrul.nalog.ru/index.html" target="_blank" rel="noopener noreferrer">
+                        <Button className="gap-2">
+                          <Download className="h-4 w-4" />
+                          Скачать
+                        </Button>
+                      </a>
+                    </>
+                  )}
+
+                  {/* Regular documents - Show create button */}
+                  {!isEGRIPDocument(currentDoc.name) && (currentDoc.status === "idle" || currentDoc.status === "error" || currentDoc.status === "skipped") && (
                     <Button onClick={() => generateDocument(currentStep)} disabled={!companyData} className="gap-2">
                       <FileText className="h-4 w-4" />
                       Создать
                     </Button>
                   )}
-                  {currentDoc.status === "done" && currentDoc.document && (
+
+                  {/* Document done - Show edit/download options (except EGRIP) */}
+                  {!isEGRIPDocument(currentDoc.name) && currentDoc.status === "done" && currentDoc.document && (
                     <>
                       <Button variant="outline" onClick={() => generateDocument(currentStep)} className="gap-2">
                         <FileText className="h-4 w-4" />
@@ -452,6 +483,8 @@ const DocumentGeneration = () => {
                       </Button>
                     </>
                   )}
+
+                  {/* Skip button - always available for non-done documents */}
                   {currentDoc.status !== "generating" && currentDoc.status !== "done" && (
                     <Button variant="ghost" onClick={skipDocument} className="gap-2 text-muted-foreground">
                       <SkipForward className="h-4 w-4" />
