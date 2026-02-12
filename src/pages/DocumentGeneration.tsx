@@ -1,17 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, FileText, Loader2, Download, Eye, ChevronRight, CheckCircle2, AlertCircle, FileDown } from "lucide-react";
+import { ArrowLeft, FileText, Loader2, Download, Eye, CheckCircle2, AlertCircle, FileDown, Pencil, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle } from "docx";
+import { Document, Packer, Paragraph, TextRun, AlignmentType } from "docx";
 import { saveAs } from "file-saver";
+import { formatCurrency, numberToWordsRubles } from "@/lib/numberToWords";
 
 type GeneratedDocument = {
   title: string;
@@ -43,8 +45,15 @@ const DocumentGeneration = () => {
   const [previewDoc, setPreviewDoc] = useState<DocState | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
 
-  // Load data
+  // Editable amount state
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [editAmount, setEditAmount] = useState("");
+
+  // Prevent useEffect from resetting generated docs
+  const dataLoadedRef = useRef(false);
+
   useEffect(() => {
+    if (dataLoadedRef.current) return; // Don't re-run and reset state
     const fetchData = async () => {
       if (!id || !user) return;
       
@@ -58,13 +67,11 @@ const DocumentGeneration = () => {
 
       if (analysisRes.data) setAnalysisTitle(analysisRes.data.title);
 
-      // Get documents for the selected participant type
       const categoryDocs = docsRes.data?.find(d => d.category === participantType);
       const docs = (categoryDocs?.documents as string[]) || [];
       setRequiredDocs(docs);
       setDocStates(docs.map(name => ({ name, status: "idle" })));
 
-      // Build tender context from analysis results
       if (resultsRes.data) {
         const context = resultsRes.data
           .filter(r => r.details)
@@ -73,7 +80,6 @@ const DocumentGeneration = () => {
         setTenderContext(context);
       }
 
-      // Company data
       if (companyRes.data) {
         setCompanyData({ ...companyRes.data, participantType });
       }
@@ -81,15 +87,18 @@ const DocumentGeneration = () => {
         setBidAmountData(bidAmountRes.data);
       }
 
+      dataLoadedRef.current = true;
       setLoading(false);
     };
     fetchData();
   }, [id, user, participantType]);
 
   const generateDocument = useCallback(async (docIndex: number) => {
-    const docName = docStates[docIndex].name;
-    
-    setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "generating" } : d));
+    let docName = "";
+    setDocStates(prev => {
+      docName = prev[docIndex].name;
+      return prev.map((d, i) => i === docIndex ? { ...d, status: "generating" } : d);
+    });
 
     try {
       const { data, error } = await supabase.functions.invoke("generate-bid-documents", {
@@ -104,9 +113,7 @@ const DocumentGeneration = () => {
 
       if (error) {
         let errMsg = "Ошибка генерации";
-        try {
-          if (data?.error) errMsg = data.error;
-        } catch {}
+        try { if (data?.error) errMsg = data.error; } catch {}
         throw new Error(errMsg);
       }
 
@@ -119,7 +126,7 @@ const DocumentGeneration = () => {
       setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "error", error: err.message } : d));
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     }
-  }, [docStates, id, companyData, tenderContext, toast]);
+  }, [id, companyData, tenderContext, bidAmountData, toast]);
 
   const generateAll = async () => {
     setGeneratingAll(true);
@@ -132,17 +139,67 @@ const DocumentGeneration = () => {
     toast({ title: "Готово", description: "Все документы сгенерированы" });
   };
 
+  // Quick amount edit handlers
+  const startEditAmount = () => {
+    setEditAmount(bidAmountData?.amount?.toString() || "");
+    setEditingAmount(true);
+  };
+
+  const cancelEditAmount = () => {
+    setEditingAmount(false);
+    setEditAmount("");
+  };
+
+  const saveEditAmount = () => {
+    const newAmount = parseFloat(editAmount);
+    if (isNaN(newAmount) || newAmount <= 0) {
+      toast({ title: "Ошибка", description: "Введите корректную сумму", variant: "destructive" });
+      return;
+    }
+
+    // Recalculate VAT based on the same vat_rate
+    const vatRate = bidAmountData?.vat_rate || "20%";
+    let vatAmount = 0;
+    let totalWithVat = newAmount;
+
+    if (vatRate === "Без НДС") {
+      vatAmount = 0;
+      totalWithVat = newAmount;
+    } else {
+      const rate = parseFloat(vatRate) / 100;
+      // НДС включен в сумму
+      vatAmount = Math.round((newAmount * rate / (1 + rate)) * 100) / 100;
+      totalWithVat = newAmount;
+    }
+
+    const updatedBid = {
+      ...bidAmountData,
+      amount: newAmount,
+      vat_amount: vatAmount,
+      total_with_vat: totalWithVat,
+      amount_words: numberToWordsRubles(newAmount),
+      vat_amount_words: numberToWordsRubles(vatAmount),
+      total_words: numberToWordsRubles(totalWithVat),
+    };
+
+    setBidAmountData(updatedBid);
+    setEditingAmount(false);
+
+    // Reset generated docs since amount changed
+    setDocStates(prev => prev.map(d => ({ ...d, status: "idle", document: undefined, error: undefined })));
+
+    toast({ title: "Сумма обновлена", description: `Новая сумма: ${formatCurrency(newAmount)}. Перегенерируйте документы.` });
+  };
+
   const downloadDocx = async (doc: GeneratedDocument) => {
     const children: Paragraph[] = [];
 
-    // Title
     children.push(new Paragraph({
       children: [new TextRun({ text: doc.title, bold: true, size: 28, font: "Times New Roman" })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
     }));
 
-    // Sections
     for (const section of doc.sections) {
       if (section.heading) {
         children.push(new Paragraph({
@@ -150,7 +207,6 @@ const DocumentGeneration = () => {
           spacing: { before: 200, after: 100 },
         }));
       }
-      
       const lines = section.content.split("\n");
       for (const line of lines) {
         children.push(new Paragraph({
@@ -160,7 +216,6 @@ const DocumentGeneration = () => {
       }
     }
 
-    // Signature block
     if (doc.signature_block) {
       children.push(new Paragraph({ spacing: { before: 400 } }));
       const sigLines = doc.signature_block.split("\n");
@@ -217,15 +272,54 @@ const DocumentGeneration = () => {
           <Badge variant="secondary">{doneCount} / {docStates.length}</Badge>
         </div>
 
-        {/* Company info card */}
+        {/* Company + Amount info card */}
         {companyData && (
           <Card className="bg-muted/30">
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2 mb-2">
+            <CardContent className="pt-4 space-y-3">
+              <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 <span className="font-medium text-sm">Данные участника загружены</span>
               </div>
               <p className="text-sm text-muted-foreground">{companyData.full_name} • ИНН {companyData.inn}</p>
+              
+              {/* Bid amount display/edit */}
+              {bidAmountData && (
+                <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                  <span className="text-sm text-muted-foreground">Сумма заявки:</span>
+                  {editingAmount ? (
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="h-7 w-40 text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEditAmount();
+                          if (e.key === "Escape") cancelEditAmount();
+                        }}
+                      />
+                      <span className="text-sm text-muted-foreground">₽</span>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={saveEditAmount}>
+                        <Check className="h-3.5 w-3.5 text-primary" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={cancelEditAmount}>
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium">{formatCurrency(Number(bidAmountData.amount))}</span>
+                      {bidAmountData.vat_rate !== "Без НДС" && (
+                        <span className="text-xs text-muted-foreground">(вкл. НДС {bidAmountData.vat_rate})</span>
+                      )}
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={startEditAmount}>
+                        <Pencil className="h-3 w-3 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
