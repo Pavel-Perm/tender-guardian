@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle } from "lucide-react";
+import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -658,6 +658,12 @@ const BidPreparation = () => {
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="h-4 w-4" />
               Назад к документам
+            </Button>
+          </Link>
+          <Link to={`/analysis/${id}/generate-documents?type=${participantType}`}>
+            <Button className="gap-2">
+              Генерация документов
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </Link>
         </div>
