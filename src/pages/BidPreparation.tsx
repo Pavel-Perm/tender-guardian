@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle, ChevronRight, Save } from "lucide-react";
+import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle, ChevronRight, Save, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -94,6 +94,7 @@ const BidPreparation = () => {
   const [fillMode, setFillMode] = useState<"manual" | "upload" | null>(null);
   const [showHighlight, setShowHighlight] = useState(false);
   const [sameAddress, setSameAddress] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"saving" | "saved" | null>(null);
 
   // CSS class for empty fields that need attention
   const emptyFieldClass = (value: string) => 
@@ -135,12 +136,21 @@ const BidPreparation = () => {
   useEffect(() => {
     const autosaveInterval = setInterval(() => {
       if (company.inn && company.full_name && user && fillMode === "manual") {
+        setAutoSaveStatus("saving");
         saveCompany();
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(autosaveInterval);
   }, [company, user, fillMode]);
+
+  // Clear autosave indicator after 3 seconds
+  useEffect(() => {
+    if (autoSaveStatus === "saved") {
+      const timer = setTimeout(() => setAutoSaveStatus(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoSaveStatus]);
 
   // Upload company card and parse via AI
   const handleCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -288,9 +298,14 @@ const BidPreparation = () => {
         if (data) setCompany(prev => ({ ...prev, id: data.id }));
       }
       setSaved(true);
-      toast({ title: "Сохранено", description: "Данные организации сохранены в базу" });
+      if (autoSaveStatus === "saving") {
+        setAutoSaveStatus("saved");
+      } else {
+        toast({ title: "Сохранено", description: "Данные организации сохранены в базу" });
+      }
     } catch (err: any) {
       toast({ title: "Ошибка сохранения", description: err.message, variant: "destructive" });
+      setAutoSaveStatus(null);
     }
     setSaving(false);
   };
@@ -298,6 +313,28 @@ const BidPreparation = () => {
   return (
     <AppLayout>
       <div className="space-y-6">
+        {/* Autosave indicator */}
+        {autoSaveStatus && (
+          <div className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+            autoSaveStatus === "saving" 
+              ? "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300" 
+              : "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300"
+          )}>
+            {autoSaveStatus === "saving" ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Автосохранение...</span>
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4" />
+                <span>Автосохранено</span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center gap-4">
           <Link to={`/analysis/${id}/documents?type=${participantType}`}>
