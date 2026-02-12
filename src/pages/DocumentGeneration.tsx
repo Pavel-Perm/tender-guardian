@@ -37,6 +37,7 @@ const DocumentGeneration = () => {
   const [requiredDocs, setRequiredDocs] = useState<string[]>([]);
   const [docStates, setDocStates] = useState<DocState[]>([]);
   const [companyData, setCompanyData] = useState<any>(null);
+  const [bidAmountData, setBidAmountData] = useState<any>(null);
   const [tenderContext, setTenderContext] = useState("");
   const [analysisTitle, setAnalysisTitle] = useState("");
   const [previewDoc, setPreviewDoc] = useState<DocState | null>(null);
@@ -47,11 +48,12 @@ const DocumentGeneration = () => {
     const fetchData = async () => {
       if (!id || !user) return;
       
-      const [docsRes, resultsRes, analysisRes, companyRes] = await Promise.all([
+      const [docsRes, resultsRes, analysisRes, companyRes, bidAmountRes] = await Promise.all([
         supabase.from("analysis_required_documents").select("category, documents").eq("analysis_id", id),
         supabase.from("analysis_results").select("block_name, details, risk_description").eq("analysis_id", id).order("block_order"),
         supabase.from("analyses").select("title, procurement_type").eq("id", id).single(),
         supabase.from("companies").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("bid_amounts").select("*").eq("analysis_id", id).maybeSingle(),
       ]);
 
       if (analysisRes.data) setAnalysisTitle(analysisRes.data.title);
@@ -75,6 +77,9 @@ const DocumentGeneration = () => {
       if (companyRes.data) {
         setCompanyData({ ...companyRes.data, participantType });
       }
+      if (bidAmountRes.data) {
+        setBidAmountData(bidAmountRes.data);
+      }
 
       setLoading(false);
     };
@@ -92,7 +97,8 @@ const DocumentGeneration = () => {
           analysisId: id,
           documentName: docName,
           companyData,
-          tenderContext: tenderContext.slice(0, 10000), // Limit context size
+          tenderContext: tenderContext.slice(0, 10000),
+          bidAmountData,
         },
       });
 
