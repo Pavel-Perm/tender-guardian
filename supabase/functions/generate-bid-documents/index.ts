@@ -29,11 +29,10 @@ serve(async (req) => {
     const { analysisId, documentName, companyData, tenderContext, bidAmountData } = await req.json();
     if (!analysisId || !documentName) throw new Error("analysisId and documentName required");
 
-    // Verify ownership
     const { data: analysis } = await userClient.from("analyses").select("*").eq("id", analysisId).single();
     if (!analysis) throw new Error("Analysis not found");
 
-    // Fetch uploaded files for this analysis to extract templates
+    // Fetch uploaded files for this analysis
     const { data: analysisFiles } = await supabase
       .from("analysis_files")
       .select("file_name, file_path, file_type")
@@ -59,14 +58,24 @@ serve(async (req) => {
           const lowerName = file.file_name.toLowerCase();
 
           if (lowerName.endsWith(".docx")) {
-            // Extract text from DOCX using ZIP parsing
             extractedText = await extractDocxText(bytes);
+            // If DOCX extraction failed (compressed), fall back to Gemini
+            if (!extractedText || extractedText.trim().length < 20) {
+              console.log(`DOCX text extraction yielded little text for ${file.file_name}, using Gemini vision fallback`);
+              const base64 = arrayBufferToBase64(arrayBuffer);
+              extractedText = await extractFileWithVision(base64, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", lovableApiKey);
+            }
           } else if (lowerName.endsWith(".txt") || lowerName.endsWith(".csv")) {
             extractedText = new TextDecoder("utf-8").decode(bytes);
           } else if (lowerName.endsWith(".pdf")) {
-            // For PDFs, use Gemini vision to extract text
             const base64 = arrayBufferToBase64(arrayBuffer);
-            extractedText = await extractPdfWithVision(base64, lovableApiKey);
+            extractedText = await extractFileWithVision(base64, "application/pdf", lovableApiKey);
+          } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+            const base64 = arrayBufferToBase64(arrayBuffer);
+            const mime = lowerName.endsWith(".xlsx") 
+              ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              : "application/vnd.ms-excel";
+            extractedText = await extractFileWithVision(base64, mime, lovableApiKey);
           }
 
           if (extractedText && extractedText.trim().length > 20) {
@@ -104,13 +113,12 @@ serve(async (req) => {
       }
     }
 
-    // If still nothing, use all file texts as context (truncated)
+    // If still nothing, use all file texts as context
     const filesContext = templateText || allFilesText.join("\n\n");
 
     const participantTypeLabel = companyData?.participantType === "ip" ? "Индивидуальный предприниматель" :
       companyData?.participantType === "self_employed" ? "Самозанятый" : "Юридическое лицо";
 
-    // Build bid amount context
     let bidAmountContext = "";
     if (bidAmountData) {
       bidAmountContext = `
@@ -135,7 +143,7 @@ serve(async (req) => {
 3. НЕ удаляй и не пропускай ни одной секции, таблицы, пункта из шаблона
 4. Заполни ВСЕ пустые поля (помеченные как [___], «указывается», «выбирается необходимое», пустые ячейки таблиц) данными участника
 5. Если для поля нет данных в реквизитах участника — оставь плейсхолдер [___]
-6. Сохрани ВСЕ таблицы из шаблона, заполнив их данными участника
+6. Сохрани ВСЕ таблицы из шаблона, заполнив их данными участника. Таблицы представляй в текстовом формате с разделителями | (вертикальная черта), каждая строка таблицы на отдельной строке.
 7. Сохрани нумерацию, маркировку списков, заголовки секций ТОЧНО как в шаблоне
 8. «Выбирается необходимое» — выбери подходящий вариант на основе данных участника
 
@@ -226,7 +234,7 @@ ${tenderContext ? `\n${tenderContext.slice(0, 10000)}` : ""}
 2. Используй контекст из загруженных файлов для точного воспроизведения структуры
 3. Подставь все известные реквизиты участника в соответствующие поля
 4. Где данные не указаны — поставь "[___]" как плейсхолдер
-5. Сохрани все таблицы если они есть в контексте файлов
+5. Сохрани все таблицы если они есть в контексте файлов. Таблицы представляй с разделителями |
 6. НЕ добавляй лишнего от себя
 7. Добавь место для подписи и печати в конце документа
 
@@ -244,6 +252,7 @@ ${tenderContext ? `\n${tenderContext.slice(0, 10000)}` : ""}
 
 Без markdown, без пояснений вне JSON.`;
 
+    // Use a stronger model for better template reproduction
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -253,7 +262,7 @@ ${tenderContext ? `\n${tenderContext.slice(0, 10000)}` : ""}
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: "Ты генерируешь тендерные документы. Твоя задача — ТОЧНО воспроизвести структуру шаблона и заполнить все пустые поля данными участника. Отвечай ТОЛЬКО валидным JSON. НЕ добавляй ничего от себя, чего нет в шаблоне." },
+          { role: "system", content: "Ты генерируешь тендерные документы. Твоя задача — ТОЧНО воспроизвести структуру шаблона и заполнить все пустые поля данными участника. Отвечай ТОЛЬКО валидным JSON. НЕ добавляй ничего от себя, чего нет в шаблоне. Таблицы форматируй с разделителями | (вертикальная черта)." },
           { role: "user", content: prompt },
         ],
       }),
@@ -276,15 +285,12 @@ ${tenderContext ? `\n${tenderContext.slice(0, 10000)}` : ""}
     const aiData = await aiResponse.json();
     let content = aiData.choices?.[0]?.message?.content || "";
     
-    // Clean markdown wrappers
     content = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     
-    // Try to parse JSON
     let document;
     try {
       document = JSON.parse(content);
     } catch {
-      // Try to find JSON in the response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         document = JSON.parse(jsonMatch[0]);
@@ -304,16 +310,14 @@ ${tenderContext ? `\n${tenderContext.slice(0, 10000)}` : ""}
   }
 });
 
-// Helper: Extract text from DOCX
+// Helper: Extract text from DOCX (handles both stored and deflate-compressed entries)
 async function extractDocxText(bytes: Uint8Array): Promise<string> {
   try {
-    // Find ZIP local file headers and extract document.xml
-    const files = parseZip(bytes);
+    const files = await parseZip(bytes);
     const docXml = files["word/document.xml"];
     if (!docXml) return "";
     
     const xmlText = new TextDecoder("utf-8").decode(docXml);
-    // Extract text from XML tags
     const texts: string[] = [];
     let current = "";
     let inTag = false;
@@ -324,7 +328,6 @@ async function extractDocxText(bytes: Uint8Array): Promise<string> {
         if (current) texts.push(current);
         current = "";
         inTag = true;
-        // Check for paragraph/line break tags
         const nextChars = xmlText.slice(i, i + 20);
         if (nextChars.match(/^<w:p[\s>\/]/) || nextChars.match(/^<w:br/)) {
           texts.push("\n");
@@ -347,14 +350,14 @@ async function extractDocxText(bytes: Uint8Array): Promise<string> {
   }
 }
 
-// Minimal ZIP parser
-function parseZip(data: Uint8Array): Record<string, Uint8Array> {
+// Async ZIP parser that handles both stored and deflate-compressed entries
+async function parseZip(data: Uint8Array): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   let offset = 0;
 
   while (offset < data.length - 4) {
     const sig = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-    if (sig !== 0x04034b50) break; // Local file header
+    if (sig !== 0x04034b50) break;
 
     const compressionMethod = data[offset + 8] | (data[offset + 9] << 8);
     const compressedSize = data[offset + 18] | (data[offset + 19] << 8) | (data[offset + 20] << 16) | (data[offset + 21] << 24);
@@ -369,29 +372,36 @@ function parseZip(data: Uint8Array): Record<string, Uint8Array> {
     const size = compressedSize || uncompressedSize;
 
     if (compressionMethod === 0 && size > 0) {
-      // Stored (no compression)
       files[fileName] = data.slice(dataStart, dataStart + size);
     } else if (compressionMethod === 8 && size > 0) {
       // Deflate - use DecompressionStream
       try {
         const compressed = data.slice(dataStart, dataStart + size);
-        // Try raw inflate using DecompressionStream
         const ds = new DecompressionStream("raw");
         const writer = ds.writable.getWriter();
         const reader = ds.readable.getReader();
         
+        const writePromise = writer.write(compressed).then(() => writer.close());
         const chunks: Uint8Array[] = [];
-        const readAll = async () => {
-          writer.write(compressed).then(() => writer.close());
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-          }
-        };
-        // We can't await here in sync context, skip deflate files
-        // Will fall back to vision API for such files
-      } catch {}
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        await writePromise;
+        
+        // Concatenate chunks
+        const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+        const result = new Uint8Array(totalLen);
+        let pos = 0;
+        for (const chunk of chunks) {
+          result.set(chunk, pos);
+          pos += chunk.length;
+        }
+        files[fileName] = result;
+      } catch (e) {
+        console.error(`Failed to decompress ${fileName}:`, e);
+      }
     }
 
     offset = dataStart + (size || 0);
@@ -408,7 +418,6 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
   return matchCount >= Math.ceil(needleWords.length * 0.4);
 }
 
-// Helper to convert ArrayBuffer to base64
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -418,8 +427,8 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Extract PDF text using Gemini vision
-async function extractPdfWithVision(base64Data: string, apiKey: string): Promise<string> {
+// Extract file content using Gemini with inline_data (supports PDF, DOCX, etc.)
+async function extractFileWithVision(base64Data: string, mimeType: string, apiKey: string): Promise<string> {
   try {
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -432,16 +441,31 @@ async function extractPdfWithVision(base64Data: string, apiKey: string): Promise
         messages: [
           {
             role: "user",
-            content: "Извлеки ВЕСЬ текст из этого PDF документа. Сохрани структуру: заголовки, таблицы, нумерованные списки, все поля форм. Верни ТОЛЬКО извлечённый текст без комментариев.",
+            content: [
+              {
+                type: "text",
+                text: "Извлеки ВЕСЬ текст из этого документа. Сохрани структуру: заголовки, таблицы (форматируй с разделителями |), нумерованные списки, все поля форм. Верни ТОЛЬКО извлечённый текст без комментариев.",
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Data}`,
+                },
+              },
+            ],
           },
         ],
       }),
     });
 
-    if (!response.ok) return "";
+    if (!response.ok) {
+      console.error(`Vision extraction failed with status ${response.status}`);
+      return "";
+    }
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
-  } catch {
+  } catch (e) {
+    console.error("Vision extraction error:", e);
     return "";
   }
 }
