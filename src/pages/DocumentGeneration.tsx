@@ -1,18 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { useParams, Link, useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, FileText, Loader2, Download, Eye, CheckCircle2, AlertCircle, FileDown, Pencil, Check, X } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import {
+  ArrowLeft, ArrowRight, FileText, Loader2, Download, Eye, CheckCircle2,
+  AlertCircle, FileDown, Pencil, Check, X, SkipForward, Save, PackageCheck, Archive
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Document, Packer, Paragraph, TextRun, AlignmentType } from "docx";
 import { saveAs } from "file-saver";
+import JSZip from "jszip";
 import { formatCurrency, numberToWordsRubles } from "@/lib/numberToWords";
 
 type GeneratedDocument = {
@@ -23,40 +28,50 @@ type GeneratedDocument = {
 
 type DocState = {
   name: string;
-  status: "idle" | "generating" | "done" | "error";
+  status: "idle" | "generating" | "done" | "skipped" | "error";
   document?: GeneratedDocument;
   error?: string;
+  editedSections?: { heading: string; content: string }[];
+  editedSignature?: string;
 };
+
+type WizardStep = "steps" | "summary";
 
 const DocumentGeneration = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const participantType = searchParams.get("type") || "enterprise";
   const { toast } = useToast();
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [requiredDocs, setRequiredDocs] = useState<string[]>([]);
   const [docStates, setDocStates] = useState<DocState[]>([]);
   const [companyData, setCompanyData] = useState<any>(null);
   const [bidAmountData, setBidAmountData] = useState<any>(null);
   const [tenderContext, setTenderContext] = useState("");
   const [analysisTitle, setAnalysisTitle] = useState("");
-  const [previewDoc, setPreviewDoc] = useState<DocState | null>(null);
-  const [generatingAll, setGeneratingAll] = useState(false);
 
-  // Editable amount state
+  // Wizard state
+  const [currentStep, setCurrentStep] = useState(0);
+  const [wizardPhase, setWizardPhase] = useState<WizardStep>("steps");
+
+  // Edit mode for preview
+  const [editMode, setEditMode] = useState(false);
+  const [editSections, setEditSections] = useState<{ heading: string; content: string }[]>([]);
+  const [editSignature, setEditSignature] = useState("");
+
+  // Editable amount
   const [editingAmount, setEditingAmount] = useState(false);
   const [editAmount, setEditAmount] = useState("");
 
-  // Prevent useEffect from resetting generated docs
   const dataLoadedRef = useRef(false);
 
   useEffect(() => {
-    if (dataLoadedRef.current) return; // Don't re-run and reset state
+    if (dataLoadedRef.current) return;
     const fetchData = async () => {
       if (!id || !user) return;
-      
+
       const [docsRes, resultsRes, analysisRes, companyRes, bidAmountRes] = await Promise.all([
         supabase.from("analysis_required_documents").select("category, documents").eq("analysis_id", id),
         supabase.from("analysis_results").select("block_name, details, risk_description").eq("analysis_id", id).order("block_order"),
@@ -69,7 +84,6 @@ const DocumentGeneration = () => {
 
       const categoryDocs = docsRes.data?.find(d => d.category === participantType);
       const docs = (categoryDocs?.documents as string[]) || [];
-      setRequiredDocs(docs);
       setDocStates(docs.map(name => ({ name, status: "idle" })));
 
       if (resultsRes.data) {
@@ -80,12 +94,8 @@ const DocumentGeneration = () => {
         setTenderContext(context);
       }
 
-      if (companyRes.data) {
-        setCompanyData({ ...companyRes.data, participantType });
-      }
-      if (bidAmountRes.data) {
-        setBidAmountData(bidAmountRes.data);
-      }
+      if (companyRes.data) setCompanyData({ ...companyRes.data, participantType });
+      if (bidAmountRes.data) setBidAmountData(bidAmountRes.data);
 
       dataLoadedRef.current = true;
       setLoading(false);
@@ -128,50 +138,26 @@ const DocumentGeneration = () => {
     }
   }, [id, companyData, tenderContext, bidAmountData, toast]);
 
-  const generateAll = async () => {
-    setGeneratingAll(true);
-    for (let i = 0; i < docStates.length; i++) {
-      if (docStates[i].status !== "done") {
-        await generateDocument(i);
-      }
-    }
-    setGeneratingAll(false);
-    toast({ title: "Готово", description: "Все документы сгенерированы" });
-  };
-
-  // Quick amount edit handlers
+  // Amount edit
   const startEditAmount = () => {
     setEditAmount(bidAmountData?.amount?.toString() || "");
     setEditingAmount(true);
   };
-
-  const cancelEditAmount = () => {
-    setEditingAmount(false);
-    setEditAmount("");
-  };
-
+  const cancelEditAmount = () => { setEditingAmount(false); setEditAmount(""); };
   const saveEditAmount = () => {
     const newAmount = parseFloat(editAmount);
     if (isNaN(newAmount) || newAmount <= 0) {
       toast({ title: "Ошибка", description: "Введите корректную сумму", variant: "destructive" });
       return;
     }
-
-    // Recalculate VAT based on the same vat_rate
     const vatRate = bidAmountData?.vat_rate || "20%";
     let vatAmount = 0;
     let totalWithVat = newAmount;
-
-    if (vatRate === "Без НДС") {
-      vatAmount = 0;
-      totalWithVat = newAmount;
-    } else {
+    if (vatRate !== "Без НДС") {
       const rate = parseFloat(vatRate) / 100;
-      // НДС включен в сумму
       vatAmount = Math.round((newAmount * rate / (1 + rate)) * 100) / 100;
       totalWithVat = newAmount;
     }
-
     const updatedBid = {
       ...bidAmountData,
       amount: newAmount,
@@ -181,34 +167,78 @@ const DocumentGeneration = () => {
       vat_amount_words: numberToWordsRubles(vatAmount),
       total_words: numberToWordsRubles(totalWithVat),
     };
-
     setBidAmountData(updatedBid);
     setEditingAmount(false);
-
-    // Reset generated docs since amount changed
     setDocStates(prev => prev.map(d => ({ ...d, status: "idle", document: undefined, error: undefined })));
-
     toast({ title: "Сумма обновлена", description: `Новая сумма: ${formatCurrency(newAmount)}. Перегенерируйте документы.` });
   };
 
-  const downloadDocx = async (doc: GeneratedDocument) => {
+  // Edit document content
+  const startEdit = (doc: DocState) => {
+    const sections = doc.editedSections || doc.document?.sections || [];
+    setEditSections(sections.map(s => ({ ...s })));
+    setEditSignature(doc.editedSignature || doc.document?.signature_block || "");
+    setEditMode(true);
+  };
+
+  const saveEdit = () => {
+    setDocStates(prev => prev.map((d, i) => {
+      if (i !== currentStep) return d;
+      return {
+        ...d,
+        editedSections: editSections,
+        editedSignature: editSignature,
+      };
+    }));
+    setEditMode(false);
+    toast({ title: "Сохранено", description: "Изменения сохранены" });
+  };
+
+  const skipDocument = () => {
+    setDocStates(prev => prev.map((d, i) => i === currentStep ? { ...d, status: "skipped" } : d));
+  };
+
+  const goNext = () => {
+    if (currentStep < docStates.length - 1) {
+      setCurrentStep(currentStep + 1);
+      setEditMode(false);
+    } else {
+      setWizardPhase("summary");
+      setEditMode(false);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardPhase === "summary") {
+      setWizardPhase("steps");
+      setCurrentStep(docStates.length - 1);
+    } else if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      setEditMode(false);
+    }
+  };
+
+  // DOCX building helper
+  const buildDocxBlob = async (doc: DocState): Promise<Blob> => {
+    const gd = doc.document!;
+    const sections = doc.editedSections || gd.sections;
+    const sigBlock = doc.editedSignature || gd.signature_block;
     const children: Paragraph[] = [];
 
     children.push(new Paragraph({
-      children: [new TextRun({ text: doc.title, bold: true, size: 28, font: "Times New Roman" })],
+      children: [new TextRun({ text: gd.title, bold: true, size: 28, font: "Times New Roman" })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
     }));
 
-    for (const section of doc.sections) {
+    for (const section of sections) {
       if (section.heading) {
         children.push(new Paragraph({
           children: [new TextRun({ text: section.heading, bold: true, size: 24, font: "Times New Roman" })],
           spacing: { before: 200, after: 100 },
         }));
       }
-      const lines = section.content.split("\n");
-      for (const line of lines) {
+      for (const line of section.content.split("\n")) {
         children.push(new Paragraph({
           children: [new TextRun({ text: line, size: 24, font: "Times New Roman" })],
           spacing: { after: 60 },
@@ -216,10 +246,9 @@ const DocumentGeneration = () => {
       }
     }
 
-    if (doc.signature_block) {
+    if (sigBlock) {
       children.push(new Paragraph({ spacing: { before: 400 } }));
-      const sigLines = doc.signature_block.split("\n");
-      for (const line of sigLines) {
+      for (const line of sigBlock.split("\n")) {
         children.push(new Paragraph({
           children: [new TextRun({ text: line, size: 24, font: "Times New Roman" })],
           spacing: { after: 60 },
@@ -230,17 +259,31 @@ const DocumentGeneration = () => {
     const docx = new Document({
       sections: [{ properties: { page: { margin: { top: 1134, bottom: 1134, left: 1701, right: 850 } } }, children }],
     });
+    return Packer.toBlob(docx);
+  };
 
-    const blob = await Packer.toBlob(docx);
-    const safeName = doc.title.replace(/[^a-zA-Zа-яА-Я0-9\s]/g, "").trim().slice(0, 50) || "document";
+  const downloadDocx = async (doc: DocState) => {
+    const blob = await buildDocxBlob(doc);
+    const safeName = doc.document!.title.replace(/[^a-zA-Zа-яА-Я0-9\s]/g, "").trim().slice(0, 50) || "document";
     saveAs(blob, `${safeName}.docx`);
   };
 
-  const downloadAll = async () => {
+  const downloadAllZip = async () => {
     const doneDocs = docStates.filter(d => d.status === "done" && d.document);
-    for (const d of doneDocs) {
-      await downloadDocx(d.document!);
+    if (doneDocs.length === 0) return;
+
+    const zip = new JSZip();
+    for (const doc of doneDocs) {
+      const blob = await buildDocxBlob(doc);
+      const safeName = doc.document!.title.replace(/[^a-zA-Zа-яА-Я0-9\s]/g, "").trim().slice(0, 50) || "document";
+      zip.file(`${safeName}.docx`, blob);
     }
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    saveAs(zipBlob, `Документы_${analysisTitle.slice(0, 30)}.zip`);
+  };
+
+  const finishWizard = () => {
+    navigate("/dashboard");
   };
 
   if (loading) {
@@ -254,23 +297,34 @@ const DocumentGeneration = () => {
   }
 
   const doneCount = docStates.filter(d => d.status === "done").length;
+  const skippedCount = docStates.filter(d => d.status === "skipped").length;
+  const totalDocs = docStates.length;
+  const currentDoc = docStates[currentStep];
+  const progressPercent = totalDocs > 0 ? ((currentStep + (wizardPhase === "summary" ? 1 : 0)) / totalDocs) * 100 : 0;
+
+  // Get the display sections (edited or original)
+  const getDisplaySections = (doc: DocState) => doc.editedSections || doc.document?.sections || [];
+  const getDisplaySignature = (doc: DocState) => doc.editedSignature || doc.document?.signature_block || "";
 
   return (
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <Link to={`/analysis/${id}/bid-amount?type=${participantType}`}>
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+          <Button variant="ghost" size="sm" onClick={goPrev} disabled={currentStep === 0 && wizardPhase === "steps"}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <div className="flex-1">
             <h1 className="text-2xl font-bold">Генерация документов</h1>
             <p className="text-muted-foreground text-sm">{analysisTitle}</p>
           </div>
-          <Badge variant="secondary">{doneCount} / {docStates.length}</Badge>
+          <Badge variant="secondary">
+            {wizardPhase === "summary" ? "Итого" : `${currentStep + 1} / ${totalDocs}`}
+          </Badge>
         </div>
+
+        {/* Progress bar */}
+        <Progress value={wizardPhase === "summary" ? 100 : progressPercent} className="h-2" />
 
         {/* Company + Amount info card */}
         {companyData && (
@@ -278,11 +332,9 @@ const DocumentGeneration = () => {
             <CardContent className="pt-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
-                <span className="font-medium text-sm">Данные участника загружены</span>
+                <span className="font-medium text-sm">Данные участника</span>
               </div>
               <p className="text-sm text-muted-foreground">{companyData.full_name} • ИНН {companyData.inn}</p>
-              
-              {/* Bid amount display/edit */}
               {bidAmountData && (
                 <div className="flex items-center gap-2 pt-1 border-t border-border/50">
                   <span className="text-sm text-muted-foreground">Сумма заявки:</span>
@@ -330,74 +382,284 @@ const DocumentGeneration = () => {
               <AlertCircle className="h-5 w-5 text-amber-600" />
               <div>
                 <p className="font-medium text-sm">Данные участника не найдены</p>
-                <p className="text-sm text-muted-foreground">Вернитесь на предыдущий шаг и сохраните реквизиты в базу</p>
+                <p className="text-sm text-muted-foreground">Вернитесь на предыдущий шаг</p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Action buttons */}
-        <div className="flex gap-3">
-          <Button onClick={generateAll} disabled={generatingAll || !companyData} className="gap-2">
-            {generatingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            Сгенерировать все документы
-          </Button>
-          {doneCount > 0 && (
-            <Button variant="outline" onClick={downloadAll} className="gap-2">
-              <FileDown className="h-4 w-4" />
-              Скачать все ({doneCount})
-            </Button>
-          )}
-        </div>
+        {/* ============ WIZARD PHASE: STEPS ============ */}
+        {wizardPhase === "steps" && currentDoc && (
+          <div className="space-y-4">
+            {/* Current document card */}
+            <Card>
+              <CardContent className="pt-6 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-bold text-primary">
+                    {currentStep + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-lg font-semibold">Форма №{currentStep + 1}</h2>
+                    <p className="text-sm text-muted-foreground mt-1">{currentDoc.name}</p>
+                    {currentDoc.status === "skipped" && (
+                      <Badge variant="outline" className="mt-2 text-amber-600 border-amber-300">
+                        <SkipForward className="h-3 w-3 mr-1" /> Пропущено
+                      </Badge>
+                    )}
+                    {currentDoc.status === "done" && (
+                      <Badge variant="outline" className="mt-2 text-primary border-primary/30">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> Готов
+                      </Badge>
+                    )}
+                    {currentDoc.status === "generating" && (
+                      <Badge variant="outline" className="mt-2">
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Генерация...
+                      </Badge>
+                    )}
+                    {currentDoc.status === "error" && (
+                      <p className="text-xs text-destructive mt-2">{currentDoc.error}</p>
+                    )}
+                  </div>
+                </div>
 
-        {/* Documents list */}
-        <div className="space-y-3">
-          {docStates.map((doc, idx) => (
-            <Card key={idx} className={doc.status === "done" ? "border-primary/30" : ""}>
-              <CardContent className="py-4 flex items-center gap-4">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                  {idx + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{doc.name}</p>
-                  {doc.status === "generating" && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Генерация...
-                    </p>
-                  )}
-                  {doc.status === "done" && (
-                    <p className="text-xs text-primary flex items-center gap-1 mt-1">
-                      <CheckCircle2 className="h-3 w-3" /> Готов
-                    </p>
-                  )}
-                  {doc.status === "error" && (
-                    <p className="text-xs text-destructive mt-1">{doc.error}</p>
-                  )}
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  {doc.status === "idle" || doc.status === "error" ? (
-                    <Button size="sm" variant="outline" onClick={() => generateDocument(idx)} disabled={!companyData || generatingAll}>
-                      <FileText className="h-4 w-4 mr-1" />
+                {/* Action buttons for this document */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
+                  {(currentDoc.status === "idle" || currentDoc.status === "error" || currentDoc.status === "skipped") && (
+                    <Button onClick={() => generateDocument(currentStep)} disabled={!companyData} className="gap-2">
+                      <FileText className="h-4 w-4" />
                       Создать
                     </Button>
-                  ) : null}
-                  {doc.status === "done" && doc.document && (
+                  )}
+                  {currentDoc.status === "done" && currentDoc.document && (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => setPreviewDoc(doc)}>
-                        <Eye className="h-4 w-4" />
+                      <Button variant="outline" onClick={() => generateDocument(currentStep)} className="gap-2">
+                        <FileText className="h-4 w-4" />
+                        Пересоздать
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => downloadDocx(doc.document!)}>
+                      <Button variant="outline" onClick={() => startEdit(currentDoc)} className="gap-2">
+                        <Eye className="h-4 w-4" />
+                        Просмотр / Редактирование
+                      </Button>
+                      <Button variant="outline" onClick={() => downloadDocx(currentDoc)} className="gap-2">
                         <Download className="h-4 w-4" />
+                        Скачать
                       </Button>
                     </>
+                  )}
+                  {currentDoc.status !== "generating" && currentDoc.status !== "done" && (
+                    <Button variant="ghost" onClick={skipDocument} className="gap-2 text-muted-foreground">
+                      <SkipForward className="h-4 w-4" />
+                      Пропустить (заполню сам)
+                    </Button>
                   )}
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
 
-        {requiredDocs.length === 0 && (
+            {/* Edit/Preview panel */}
+            {editMode && currentDoc.status === "done" && currentDoc.document && (
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">Редактирование документа</h3>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={saveEdit} className="gap-1">
+                        <Save className="h-3.5 w-3.5" />
+                        Сохранить
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditMode(false)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <ScrollArea className="max-h-[50vh]">
+                    <div className="space-y-4 pr-4">
+                      <p className="text-sm font-medium text-center text-muted-foreground">{currentDoc.document.title}</p>
+                      {editSections.map((section, idx) => (
+                        <div key={idx} className="space-y-2">
+                          <Input
+                            value={section.heading}
+                            onChange={(e) => {
+                              const updated = [...editSections];
+                              updated[idx] = { ...updated[idx], heading: e.target.value };
+                              setEditSections(updated);
+                            }}
+                            placeholder="Заголовок секции"
+                            className="font-semibold text-sm"
+                          />
+                          <Textarea
+                            value={section.content}
+                            onChange={(e) => {
+                              const updated = [...editSections];
+                              updated[idx] = { ...updated[idx], content: e.target.value };
+                              setEditSections(updated);
+                            }}
+                            rows={Math.max(4, section.content.split("\n").length + 1)}
+                            className="text-sm font-mono"
+                          />
+                        </div>
+                      ))}
+                      <div className="pt-4 border-t border-border/50 space-y-2">
+                        <p className="text-sm font-medium">Блок подписи</p>
+                        <Textarea
+                          value={editSignature}
+                          onChange={(e) => setEditSignature(e.target.value)}
+                          rows={4}
+                          className="text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Preview (read-only) when not editing but doc is done */}
+            {!editMode && currentDoc.status === "done" && currentDoc.document && (
+              <Card className="bg-muted/20">
+                <CardContent className="pt-4">
+                  <ScrollArea className="max-h-[30vh]">
+                    <div className="space-y-3 text-sm pr-4">
+                      <p className="font-semibold text-center">{currentDoc.document.title}</p>
+                      {getDisplaySections(currentDoc).map((section, idx) => (
+                        <div key={idx}>
+                          {section.heading && <p className="font-bold">{section.heading}</p>}
+                          <div className="whitespace-pre-wrap text-muted-foreground">{section.content}</div>
+                        </div>
+                      ))}
+                      {getDisplaySignature(currentDoc) && (
+                        <div className="pt-3 border-t whitespace-pre-wrap text-muted-foreground">
+                          {getDisplaySignature(currentDoc)}
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Navigation */}
+            <div className="flex justify-between pt-4 border-t">
+              <Button variant="outline" onClick={goPrev} disabled={currentStep === 0} className="gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Назад
+              </Button>
+              <Button onClick={goNext} className="gap-2">
+                {currentStep < totalDocs - 1 ? (
+                  <>
+                    Далее
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    К итогам
+                    <PackageCheck className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ============ WIZARD PHASE: SUMMARY ============ */}
+        {wizardPhase === "summary" && (
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="pt-6 space-y-2">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <PackageCheck className="h-5 w-5 text-primary" />
+                  Итоговый пакет документов
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Заполнено: {doneCount} из {totalDocs} • Пропущено: {skippedCount}
+                </p>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-2">
+              {docStates.map((doc, idx) => (
+                <Card key={idx} className={doc.status === "done" ? "border-primary/30" : doc.status === "skipped" ? "border-amber-300/30" : ""}>
+                  <CardContent className="py-3 flex items-center gap-3">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {doc.status === "done" && (
+                        <>
+                          <Badge variant="outline" className="text-primary border-primary/30 text-xs">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Заполнено
+                          </Badge>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
+                            setWizardPhase("steps");
+                            setCurrentStep(idx);
+                          }}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => downloadDocx(doc)}>
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      {doc.status === "skipped" && (
+                        <>
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
+                            <SkipForward className="h-3 w-3 mr-1" /> Сам заполню
+                          </Badge>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
+                            setWizardPhase("steps");
+                            setCurrentStep(idx);
+                          }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      {(doc.status === "idle" || doc.status === "error") && (
+                        <>
+                          <Badge variant="outline" className="text-muted-foreground text-xs">Не заполнено</Badge>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
+                            setWizardPhase("steps");
+                            setCurrentStep(idx);
+                          }}>
+                            <FileText className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Download actions */}
+            <div className="flex flex-wrap gap-3 pt-2">
+              {doneCount > 0 && (
+                <>
+                  <Button variant="outline" onClick={downloadAllZip} className="gap-2">
+                    <Archive className="h-4 w-4" />
+                    Скачать всё (ZIP)
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {/* Bottom: Finish */}
+            <div className="flex justify-between pt-4 border-t">
+              <Button variant="outline" onClick={goPrev} className="gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Назад
+              </Button>
+              <Button onClick={finishWizard} className="gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Завершить
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {totalDocs === 0 && (
           <Card>
             <CardContent className="py-12 text-center space-y-3">
               <FileText className="h-10 w-10 mx-auto text-muted-foreground" />
@@ -406,50 +668,7 @@ const DocumentGeneration = () => {
             </CardContent>
           </Card>
         )}
-
-        {/* Bottom navigation */}
-        <div className="flex justify-between pt-4 border-t">
-          <Link to={`/analysis/${id}/bid-amount?type=${participantType}`}>
-            <Button variant="outline" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Назад к сумме заявки
-            </Button>
-          </Link>
-        </div>
       </div>
-
-      {/* Preview Dialog */}
-      <Dialog open={!!previewDoc} onOpenChange={() => setPreviewDoc(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle>{previewDoc?.document?.title}</DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-4 text-sm">
-              {previewDoc?.document?.sections.map((section, idx) => (
-                <div key={idx}>
-                  {section.heading && <h3 className="font-bold mb-2">{section.heading}</h3>}
-                  <div className="whitespace-pre-wrap">{section.content}</div>
-                </div>
-              ))}
-              {previewDoc?.document?.signature_block && (
-                <div className="mt-8 pt-4 border-t whitespace-pre-wrap">
-                  {previewDoc.document.signature_block}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setPreviewDoc(null)}>Закрыть</Button>
-            {previewDoc?.document && (
-              <Button onClick={() => downloadDocx(previewDoc.document!)} className="gap-2">
-                <Download className="h-4 w-4" />
-                Скачать DOCX
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 };
