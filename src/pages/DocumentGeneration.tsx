@@ -28,7 +28,7 @@ type GeneratedDocument = {
 
 type DocState = {
   name: string;
-  status: "idle" | "generating" | "done" | "skipped" | "error";
+  status: "idle" | "generating" | "done" | "skipped" | "not_required" | "error";
   document?: GeneratedDocument;
   error?: string;
   editedSections?: { heading: string; content: string }[];
@@ -107,7 +107,7 @@ const DocumentGeneration = () => {
 
       setDocStates(docs.map(name => {
         const saved = savedMap.get(name);
-        if (saved && (saved.status === "done" || saved.status === "skipped")) {
+        if (saved && (saved.status === "done" || saved.status === "skipped" || saved.status === "not_required")) {
           const docState: DocState = {
             name,
             status: saved.status as DocState["status"],
@@ -265,14 +265,19 @@ const DocumentGeneration = () => {
   const skipDocument = () => {
     const skippedDoc: DocState = { ...docStates[currentStep], status: "skipped" };
     setDocStates(prev => prev.map((d, i) => i === currentStep ? skippedDoc : d));
-    // Persist to DB
     saveDocToDb(skippedDoc);
+  };
+
+  const markNotRequired = () => {
+    const notReqDoc: DocState = { ...docStates[currentStep], status: "not_required" };
+    setDocStates(prev => prev.map((d, i) => i === currentStep ? notReqDoc : d));
+    saveDocToDb(notReqDoc);
   };
 
   const goNext = () => {
     // Проверяем, выбран ли вариант "создать" или "пропустить"
     const currentDoc = docStates[currentStep];
-    if (currentDoc.status !== "done" && currentDoc.status !== "skipped") {
+    if (currentDoc.status !== "done" && currentDoc.status !== "skipped" && currentDoc.status !== "not_required") {
       return; // Не переходим, если статус не выбран
     }
 
@@ -375,6 +380,7 @@ const DocumentGeneration = () => {
 
   const doneCount = docStates.filter(d => d.status === "done").length;
   const skippedCount = docStates.filter(d => d.status === "skipped").length;
+  const notRequiredCount = docStates.filter(d => d.status === "not_required").length;
   const totalDocs = docStates.length;
   const currentDoc = docStates[currentStep];
   const progressPercent = totalDocs > 0 ? ((currentStep + (wizardPhase === "summary" ? 1 : 0)) / totalDocs) * 100 : 0;
@@ -483,6 +489,11 @@ const DocumentGeneration = () => {
                         <SkipForward className="h-3 w-3 mr-1" /> Пропущено
                       </Badge>
                     )}
+                    {currentDoc.status === "not_required" && (
+                      <Badge variant="outline" className="mt-2 text-muted-foreground border-muted-foreground/30">
+                        <X className="h-3 w-3 mr-1" /> Не требуется
+                      </Badge>
+                    )}
                     {currentDoc.status === "done" && (
                       <Badge variant="outline" className="mt-2 text-primary border-primary/30">
                         <CheckCircle2 className="h-3 w-3 mr-1" /> Готов
@@ -519,7 +530,7 @@ const DocumentGeneration = () => {
                   )}
 
                   {/* Regular documents - Show create button */}
-                  {!isEGRIPDocument(currentDoc.name) && (currentDoc.status === "idle" || currentDoc.status === "error" || currentDoc.status === "skipped") && (
+                  {!isEGRIPDocument(currentDoc.name) && (currentDoc.status === "idle" || currentDoc.status === "error" || currentDoc.status === "skipped" || currentDoc.status === "not_required") && (
                     <Button onClick={() => generateDocument(currentStep)} disabled={!companyData} className="gap-2">
                       <FileText className="h-4 w-4" />
                       Создать
@@ -546,10 +557,16 @@ const DocumentGeneration = () => {
 
                   {/* Skip button - always available for non-done documents */}
                   {currentDoc.status !== "generating" && currentDoc.status !== "done" && (
-                    <Button variant="ghost" onClick={skipDocument} className="gap-2 text-muted-foreground">
-                      <SkipForward className="h-4 w-4" />
-                      Пропустить (заполню сам)
-                    </Button>
+                    <>
+                      <Button variant="ghost" onClick={skipDocument} className="gap-2 text-muted-foreground">
+                        <SkipForward className="h-4 w-4" />
+                        Пропустить (заполню сам)
+                      </Button>
+                      <Button variant="ghost" onClick={markNotRequired} className="gap-2 text-muted-foreground">
+                        <X className="h-4 w-4" />
+                        Не требуется
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -645,7 +662,7 @@ const DocumentGeneration = () => {
               </Button>
               <Button 
                 onClick={goNext} 
-                disabled={currentDoc.status !== "done" && currentDoc.status !== "skipped"}
+                disabled={currentDoc.status !== "done" && currentDoc.status !== "skipped" && currentDoc.status !== "not_required"}
                 className="gap-2"
               >
                 {currentStep < totalDocs - 1 ? (
@@ -674,14 +691,14 @@ const DocumentGeneration = () => {
                   Итоговый пакет документов
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Заполнено: {doneCount} из {totalDocs} • Пропущено: {skippedCount}
+                  Заполнено: {doneCount} из {totalDocs} • Пропущено: {skippedCount} • Не требуется: {notRequiredCount}
                 </p>
               </CardContent>
             </Card>
 
             <div className="space-y-2">
               {docStates.map((doc, idx) => (
-                <Card key={idx} className={doc.status === "done" ? "border-primary/30" : doc.status === "skipped" ? "border-amber-300/30" : ""}>
+                <Card key={idx} className={doc.status === "done" ? "border-primary/30" : doc.status === "skipped" ? "border-amber-300/30" : doc.status === "not_required" ? "border-muted-foreground/20" : ""}>
                   <CardContent className="py-3 flex items-center gap-3">
                     <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                       {idx + 1}
@@ -710,6 +727,19 @@ const DocumentGeneration = () => {
                         <>
                           <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
                             <SkipForward className="h-3 w-3 mr-1" /> Сам заполню
+                          </Badge>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
+                            setWizardPhase("steps");
+                            setCurrentStep(idx);
+                          }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      {doc.status === "not_required" && (
+                        <>
+                          <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 text-xs">
+                            <X className="h-3 w-3 mr-1" /> Не требуется
                           </Badge>
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
                             setWizardPhase("steps");
