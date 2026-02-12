@@ -199,6 +199,12 @@ const DocumentGeneration = () => {
   };
 
   const goNext = () => {
+    // Проверяем, выбран ли вариант "создать" или "пропустить"
+    const currentDoc = docStates[currentStep];
+    if (currentDoc.status !== "done" && currentDoc.status !== "skipped") {
+      return; // Не переходим, если статус не выбран
+    }
+
     if (currentStep < docStates.length - 1) {
       setCurrentStep(currentStep + 1);
       setEditMode(false);
@@ -544,7 +550,11 @@ const DocumentGeneration = () => {
                 <ArrowLeft className="h-4 w-4" />
                 Назад
               </Button>
-              <Button onClick={goNext} className="gap-2">
+              <Button 
+                onClick={goNext} 
+                disabled={currentDoc.status !== "done" && currentDoc.status !== "skipped"}
+                className="gap-2"
+              >
                 {currentStep < totalDocs - 1 ? (
                   <>
                     Далее
