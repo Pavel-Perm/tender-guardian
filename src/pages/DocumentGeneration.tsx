@@ -199,7 +199,7 @@ const DocumentGeneration = () => {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <Link to={`/analysis/${id}/bid-preparation?type=${participantType}`}>
+          <Link to={`/analysis/${id}/bid-amount?type=${participantType}`}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -309,10 +309,10 @@ const DocumentGeneration = () => {
 
         {/* Bottom navigation */}
         <div className="flex justify-between pt-4 border-t">
-          <Link to={`/analysis/${id}/bid-preparation?type=${participantType}`}>
+          <Link to={`/analysis/${id}/bid-amount?type=${participantType}`}>
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="h-4 w-4" />
-              Назад к реквизитам
+              Назад к сумме заявки
             </Button>
           </Link>
         </div>
