@@ -59,23 +59,12 @@ serve(async (req) => {
 
           if (lowerName.endsWith(".docx")) {
             extractedText = await extractDocxText(bytes);
-            // If DOCX extraction failed (compressed), fall back to Gemini
-            if (!extractedText || extractedText.trim().length < 20) {
-              console.log(`DOCX text extraction yielded little text for ${file.file_name}, using Gemini vision fallback`);
-              const base64 = arrayBufferToBase64(arrayBuffer);
-              extractedText = await extractFileWithVision(base64, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", lovableApiKey);
-            }
           } else if (lowerName.endsWith(".txt") || lowerName.endsWith(".csv")) {
             extractedText = new TextDecoder("utf-8").decode(bytes);
           } else if (lowerName.endsWith(".pdf")) {
+            // For PDFs, use Gemini vision to extract text
             const base64 = arrayBufferToBase64(arrayBuffer);
             extractedText = await extractFileWithVision(base64, "application/pdf", lovableApiKey);
-          } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
-            const base64 = arrayBufferToBase64(arrayBuffer);
-            const mime = lowerName.endsWith(".xlsx") 
-              ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              : "application/vnd.ms-excel";
-            extractedText = await extractFileWithVision(base64, mime, lovableApiKey);
           }
 
           if (extractedText && extractedText.trim().length > 20) {
@@ -374,33 +363,41 @@ async function parseZip(data: Uint8Array): Promise<Record<string, Uint8Array>> {
     if (compressionMethod === 0 && size > 0) {
       files[fileName] = data.slice(dataStart, dataStart + size);
     } else if (compressionMethod === 8 && size > 0) {
-      // Deflate - use DecompressionStream
+      // Deflate - try to decompress but don't fail on corrupt streams
       try {
         const compressed = data.slice(dataStart, dataStart + size);
-        const ds = new DecompressionStream("raw");
+        const ds = new DecompressionStream("deflate");
         const writer = ds.writable.getWriter();
         const reader = ds.readable.getReader();
         
-        const writePromise = writer.write(compressed).then(() => writer.close());
-        const chunks: Uint8Array[] = [];
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
+        let completed = false;
+        try {
+          await writer.write(compressed);
+          await writer.close();
+          
+          const chunks: Uint8Array[] = [];
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+          
+          if (chunks.length > 0) {
+            const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+            const result = new Uint8Array(totalLen);
+            let pos = 0;
+            for (const chunk of chunks) {
+              result.set(chunk, pos);
+              pos += chunk.length;
+            }
+            files[fileName] = result;
+            completed = true;
+          }
+        } catch (decompressErr) {
+          // Silently skip corrupt deflate streams
         }
-        await writePromise;
-        
-        // Concatenate chunks
-        const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-        const result = new Uint8Array(totalLen);
-        let pos = 0;
-        for (const chunk of chunks) {
-          result.set(chunk, pos);
-          pos += chunk.length;
-        }
-        files[fileName] = result;
       } catch (e) {
-        console.error(`Failed to decompress ${fileName}:`, e);
+        // Silently skip decompression errors
       }
     }
 
@@ -449,7 +446,7 @@ async function extractFileWithVision(base64Data: string, mimeType: string, apiKe
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:${mimeType};base64,${base64Data}`,
+                  url: `data:${mimeType};base64,${base64Data.slice(0, 20000000)}`,
                 },
               },
             ],
@@ -458,11 +455,12 @@ async function extractFileWithVision(base64Data: string, mimeType: string, apiKe
       }),
     });
 
+    const responseText = await response.text();
     if (!response.ok) {
-      console.error(`Vision extraction failed with status ${response.status}`);
+      console.error(`Vision extraction failed with status ${response.status}: ${responseText.slice(0, 200)}`);
       return "";
     }
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     return data.choices?.[0]?.message?.content || "";
   } catch (e) {
     console.error("Vision extraction error:", e);
