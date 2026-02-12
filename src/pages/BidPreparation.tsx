@@ -431,8 +431,8 @@ const BidPreparation = () => {
                           <Input id="inn" className={emptyFieldClass(company.inn)} value={company.inn} onChange={e => updateField("inn", e.target.value.replace(/\D/g, "").slice(0, requiredInnLength))} maxLength={requiredInnLength} />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="kpp">КПП</Label>
-                          <Input id="kpp" className={emptyFieldClass(company.kpp)} value={company.kpp} onChange={e => updateField("kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
+                          <Label htmlFor="kpp">КПП {isEntity && "*"}</Label>
+                          <Input id="kpp" className={isEntity ? emptyFieldClass(company.kpp) : ""} value={isEntity ? company.kpp : "-"} onChange={e => isEntity && updateField("kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} disabled={!isEntity} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="ogrn">ОГРН / ОГРНИП</Label>
