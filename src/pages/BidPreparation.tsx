@@ -171,11 +171,34 @@ const BidPreparation = () => {
       if (data?.company) {
         const parsed = data.company;
         console.log("Parsed company data from card:", parsed);
+
+        // Check if the detected entity type matches the selected participant type
+        const detectedType = parsed.detected_entity_type;
+        if (detectedType && detectedType !== participantType) {
+          const typeLabels: Record<string, string> = {
+            enterprise: "юридического лица",
+            ip: "ИП",
+            self_employed: "самозанятого",
+          };
+          const selectedLabels: Record<string, string> = {
+            enterprise: "Юридическое лицо",
+            ip: "ИП",
+            self_employed: "Самозанятый",
+          };
+          toast({
+            title: "Несоответствие типа карточки",
+            description: `Загружена карточка ${typeLabels[detectedType] || detectedType}, но выбран тип "${selectedLabels[participantType] || participantType}". Загрузите карточку, соответствующую выбранному типу участника.`,
+            variant: "destructive",
+          });
+          setParsing(false);
+          return;
+        }
         
         // Overwrite all fields that have values from parsed data
         setCompany(prev => {
           const merged = { ...prev };
           for (const key of Object.keys(parsed)) {
+            if (key === "detected_entity_type") continue;
             const val = parsed[key];
             if (val && typeof val === 'string' && val.trim() !== '') {
               (merged as any)[key] = val.trim();
