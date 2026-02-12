@@ -1,10 +1,56 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { unzipSync } from "https://esm.sh/fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+/** Extract plain text from a .docx file (which is a ZIP containing XML) */
+function extractTextFromDocx(buffer: ArrayBuffer): string {
+  const uint8 = new Uint8Array(buffer);
+  const unzipped = unzipSync(uint8);
+  
+  // Find word/document.xml
+  const docXmlBytes = unzipped["word/document.xml"];
+  if (!docXmlBytes) {
+    throw new Error("Invalid docx: word/document.xml not found");
+  }
+  
+  const xmlText = new TextDecoder().decode(docXmlBytes);
+  
+  // Extract text from <w:t> tags and preserve structure
+  const textParts: string[] = [];
+  // Match paragraph boundaries for line breaks
+  const paragraphs = xmlText.split(/<\/w:p>/g);
+  for (const para of paragraphs) {
+    const texts: string[] = [];
+    const regex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+    let match;
+    while ((match = regex.exec(para)) !== null) {
+      texts.push(match[1]);
+    }
+    if (texts.length > 0) {
+      textParts.push(texts.join(""));
+    }
+  }
+  
+  return textParts.join("\n");
+}
+
+/** Extract text from uploaded file based on extension */
+async function extractText(fileData: Blob, filePath: string): Promise<string> {
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  
+  if (ext === "docx") {
+    const buffer = await fileData.arrayBuffer();
+    return extractTextFromDocx(buffer);
+  }
+  
+  // For txt, csv, and other text formats - read as text directly
+  return await fileData.text();
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -36,7 +82,9 @@ serve(async (req) => {
       .download(filePath);
     if (downloadError || !fileData) throw new Error("Failed to download file");
 
-    const text = await fileData.text();
+    const text = await extractText(fileData, filePath);
+    console.log("Extracted text length:", text.length);
+    console.log("Extracted text preview:", text.substring(0, 500));
 
     // Also try to get tender docs text for context (from analysis files if analysisId provided)
     let tenderContext = "";
@@ -47,14 +95,13 @@ serve(async (req) => {
         .eq("analysis_id", analysisId);
 
       if (files && files.length > 0) {
-        // Look for appendices / questionnaire files
         for (const f of files) {
           const nameLower = f.file_name.toLowerCase();
           if (nameLower.includes("анкет") || nameLower.includes("приложен") || nameLower.includes("форм")) {
             try {
               const { data: fData } = await supabase.storage.from("documents").download(f.file_path);
               if (fData) {
-                const fText = await fData.text();
+                const fText = await extractText(fData, f.file_path);
                 tenderContext += `\n=== ${f.file_name} ===\n${fText.substring(0, 30000)}`;
               }
             } catch {}
@@ -138,7 +185,6 @@ ${tenderContext ? "Также используй тендерную докуме
 
     let company;
     try {
-      // Try to find JSON in response (sometimes AI adds extra text)
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       const jsonStr = jsonMatch ? jsonMatch[0] : content;
       company = JSON.parse(jsonStr);
@@ -146,6 +192,8 @@ ${tenderContext ? "Также используй тендерную докуме
       console.error("Failed to parse AI response:", content.substring(0, 500));
       throw new Error("Не удалось извлечь данные из документа");
     }
+
+    console.log("Parsed company:", JSON.stringify(company));
 
     return new Response(JSON.stringify({ company }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
