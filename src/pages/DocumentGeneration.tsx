@@ -741,11 +741,12 @@ const DocumentGeneration = () => {
                           <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 text-xs">
                             <X className="h-3 w-3 mr-1" /> Не требуется
                           </Badge>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => {
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => {
                             setWizardPhase("steps");
                             setCurrentStep(idx);
                           }}>
-                            <Pencil className="h-3.5 w-3.5" />
+                            <Pencil className="h-3.5 w-3.5 mr-1" />
+                            Изменить
                           </Button>
                         </>
                       )}
