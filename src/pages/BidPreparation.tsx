@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine } from "lucide-react";
+import { ArrowLeft, Search, Upload, Loader2, CheckCircle2, Building2, FileUp, PenLine, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
 
 type CompanyData = {
   id?: string;
@@ -88,6 +89,11 @@ const BidPreparation = () => {
   const [saved, setSaved] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [fillMode, setFillMode] = useState<"manual" | "upload" | null>(null);
+  const [showHighlight, setShowHighlight] = useState(false);
+
+  // CSS class for empty fields that need attention
+  const emptyFieldClass = (value: string) => 
+    showHighlight && !value.trim() ? "border-amber-400 bg-amber-50/50 dark:bg-amber-950/20" : "";
 
   // Search company by INN in DB
   const searchByInn = useCallback(async () => {
@@ -141,19 +147,49 @@ const BidPreparation = () => {
         body: { filePath, analysisId: id },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extract specific error message from edge function response
+        let errMsg = "Не удалось обработать карточку";
+        try {
+          if (data?.error) {
+            errMsg = data.error;
+          } else if (error.context) {
+            const ctx = error.context;
+            if (typeof ctx === 'object' && ctx.body) {
+              const body = typeof ctx.body === 'string' ? JSON.parse(ctx.body) : ctx.body;
+              if (body?.error) errMsg = body.error;
+            }
+          }
+        } catch {
+          if (error.message && error.message !== 'Edge Function returned a non-2xx status code') {
+            errMsg = error.message;
+          }
+        }
+        throw new Error(errMsg);
+      }
+
       if (data?.company) {
-        // Merge: keep existing non-empty fields, fill empty ones from parsed
+        const parsed = data.company;
+        console.log("Parsed company data from card:", parsed);
+        
+        // Overwrite all fields that have values from parsed data
         setCompany(prev => {
           const merged = { ...prev };
-          for (const key of Object.keys(data.company)) {
-            if (data.company[key] && !merged[key as keyof CompanyData]) {
-              (merged as any)[key] = data.company[key];
+          for (const key of Object.keys(parsed)) {
+            const val = parsed[key];
+            if (val && typeof val === 'string' && val.trim() !== '') {
+              (merged as any)[key] = val.trim();
             }
           }
           return merged;
         });
-        toast({ title: "Карточка обработана", description: "Данные извлечены из документа. Проверьте и дополните при необходимости." });
+        
+        // Switch to manual mode to show the form with filled data
+        setFillMode("manual");
+        setShowHighlight(true);
+        toast({ title: "Карточка обработана", description: "Данные извлечены из документа. Проверьте и дополните выделенные поля." });
+      } else {
+        toast({ title: "Нет данных", description: "Не удалось извлечь реквизиты из документа. Попробуйте другой файл.", variant: "destructive" });
       }
     } catch (err: any) {
       toast({ title: "Ошибка", description: err.message || "Не удалось обработать карточку", variant: "destructive" });
@@ -380,46 +416,52 @@ const BidPreparation = () => {
                     <CardDescription>Проверьте и при необходимости скорректируйте данные</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
+                    {showHighlight && (
+                      <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-200">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span>Выделенные поля не заполнены — проверьте и дополните вручную</span>
+                      </div>
+                    )}
                     {/* Basic info */}
                     <div className="space-y-4">
                       <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Основные данные</h3>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="inn">ИНН *</Label>
-                          <Input id="inn" value={company.inn} onChange={e => updateField("inn", e.target.value.replace(/\D/g, "").slice(0, requiredInnLength))} maxLength={requiredInnLength} />
+                          <Input id="inn" className={emptyFieldClass(company.inn)} value={company.inn} onChange={e => updateField("inn", e.target.value.replace(/\D/g, "").slice(0, requiredInnLength))} maxLength={requiredInnLength} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="kpp">КПП</Label>
-                          <Input id="kpp" value={company.kpp} onChange={e => updateField("kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
+                          <Input id="kpp" className={emptyFieldClass(company.kpp)} value={company.kpp} onChange={e => updateField("kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="ogrn">ОГРН / ОГРНИП</Label>
-                          <Input id="ogrn" value={company.ogrn} onChange={e => updateField("ogrn", e.target.value.replace(/\D/g, "").slice(0, 15))} maxLength={15} />
+                          <Input id="ogrn" className={emptyFieldClass(company.ogrn)} value={company.ogrn} onChange={e => updateField("ogrn", e.target.value.replace(/\D/g, "").slice(0, 15))} maxLength={15} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="okpo">ОКПО</Label>
-                          <Input id="okpo" value={company.okpo} onChange={e => updateField("okpo", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
+                          <Input id="okpo" className={emptyFieldClass(company.okpo)} value={company.okpo} onChange={e => updateField("okpo", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="okato">ОКАТО</Label>
-                          <Input id="okato" value={company.okato} onChange={e => updateField("okato", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
+                          <Input id="okato" className={emptyFieldClass(company.okato)} value={company.okato} onChange={e => updateField("okato", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="oktmo">ОКТМО</Label>
-                          <Input id="oktmo" value={company.oktmo} onChange={e => updateField("oktmo", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
+                          <Input id="oktmo" className={emptyFieldClass(company.oktmo)} value={company.oktmo} onChange={e => updateField("oktmo", e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="okved">Основной ОКВЭД</Label>
-                          <Input id="okved" value={company.okved} onChange={e => updateField("okved", e.target.value)} placeholder="00.00" />
+                          <Input id="okved" className={emptyFieldClass(company.okved)} value={company.okved} onChange={e => updateField("okved", e.target.value)} placeholder="00.00" />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="full_name">Полное наименование *</Label>
-                        <Input id="full_name" value={company.full_name} onChange={e => updateField("full_name", e.target.value)} />
+                        <Input id="full_name" className={emptyFieldClass(company.full_name)} value={company.full_name} onChange={e => updateField("full_name", e.target.value)} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="short_name">Сокращённое наименование</Label>
-                        <Input id="short_name" value={company.short_name} onChange={e => updateField("short_name", e.target.value)} />
+                        <Input id="short_name" className={emptyFieldClass(company.short_name)} value={company.short_name} onChange={e => updateField("short_name", e.target.value)} />
                       </div>
                     </div>
 
@@ -428,11 +470,11 @@ const BidPreparation = () => {
                       <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Адреса</h3>
                       <div className="space-y-2">
                         <Label htmlFor="legal_address">Юридический адрес</Label>
-                        <Input id="legal_address" value={company.legal_address} onChange={e => updateField("legal_address", e.target.value)} />
+                        <Input id="legal_address" className={emptyFieldClass(company.legal_address)} value={company.legal_address} onChange={e => updateField("legal_address", e.target.value)} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="actual_address">Фактический адрес</Label>
-                        <Input id="actual_address" value={company.actual_address} onChange={e => updateField("actual_address", e.target.value)} />
+                        <Input id="actual_address" className={emptyFieldClass(company.actual_address)} value={company.actual_address} onChange={e => updateField("actual_address", e.target.value)} />
                       </div>
                     </div>
 
@@ -442,11 +484,11 @@ const BidPreparation = () => {
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="director_name">ФИО руководителя</Label>
-                          <Input id="director_name" value={company.director_name} onChange={e => updateField("director_name", e.target.value)} />
+                          <Input id="director_name" className={emptyFieldClass(company.director_name)} value={company.director_name} onChange={e => updateField("director_name", e.target.value)} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="director_position">Должность</Label>
-                          <Input id="director_position" value={company.director_position} onChange={e => updateField("director_position", e.target.value)} placeholder="Генеральный директор" />
+                          <Input id="director_position" className={emptyFieldClass(company.director_position)} value={company.director_position} onChange={e => updateField("director_position", e.target.value)} placeholder="Генеральный директор" />
                         </div>
                       </div>
                     </div>
@@ -457,11 +499,11 @@ const BidPreparation = () => {
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="phone">Телефон</Label>
-                          <Input id="phone" value={company.phone} onChange={e => updateField("phone", e.target.value)} placeholder="+7 (___) ___-__-__" />
+                          <Input id="phone" className={emptyFieldClass(company.phone)} value={company.phone} onChange={e => updateField("phone", e.target.value)} placeholder="+7 (___) ___-__-__" />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="email">Email</Label>
-                          <Input id="email" type="email" value={company.email} onChange={e => updateField("email", e.target.value)} />
+                          <Input id="email" className={emptyFieldClass(company.email)} type="email" value={company.email} onChange={e => updateField("email", e.target.value)} />
                         </div>
                       </div>
                     </div>
@@ -472,27 +514,27 @@ const BidPreparation = () => {
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="bank_name">Наименование банка</Label>
-                          <Input id="bank_name" value={company.bank_name} onChange={e => updateField("bank_name", e.target.value)} />
+                          <Input id="bank_name" className={emptyFieldClass(company.bank_name)} value={company.bank_name} onChange={e => updateField("bank_name", e.target.value)} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bank_bik">БИК</Label>
-                          <Input id="bank_bik" value={company.bank_bik} onChange={e => updateField("bank_bik", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
+                          <Input id="bank_bik" className={emptyFieldClass(company.bank_bik)} value={company.bank_bik} onChange={e => updateField("bank_bik", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bank_account">Расчётный счёт</Label>
-                          <Input id="bank_account" value={company.bank_account} onChange={e => updateField("bank_account", e.target.value.replace(/\D/g, "").slice(0, 20))} maxLength={20} />
+                          <Input id="bank_account" className={emptyFieldClass(company.bank_account)} value={company.bank_account} onChange={e => updateField("bank_account", e.target.value.replace(/\D/g, "").slice(0, 20))} maxLength={20} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bank_corr_account">Корреспондентский счёт</Label>
-                          <Input id="bank_corr_account" value={company.bank_corr_account} onChange={e => updateField("bank_corr_account", e.target.value.replace(/\D/g, "").slice(0, 20))} maxLength={20} />
+                          <Input id="bank_corr_account" className={emptyFieldClass(company.bank_corr_account)} value={company.bank_corr_account} onChange={e => updateField("bank_corr_account", e.target.value.replace(/\D/g, "").slice(0, 20))} maxLength={20} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bank_inn">ИНН банка</Label>
-                          <Input id="bank_inn" value={company.bank_inn} onChange={e => updateField("bank_inn", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
+                          <Input id="bank_inn" className={emptyFieldClass(company.bank_inn)} value={company.bank_inn} onChange={e => updateField("bank_inn", e.target.value.replace(/\D/g, "").slice(0, 10))} maxLength={10} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bank_kpp">КПП банка</Label>
-                          <Input id="bank_kpp" value={company.bank_kpp} onChange={e => updateField("bank_kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
+                          <Input id="bank_kpp" className={emptyFieldClass(company.bank_kpp)} value={company.bank_kpp} onChange={e => updateField("bank_kpp", e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} />
                         </div>
                       </div>
                     </div>
