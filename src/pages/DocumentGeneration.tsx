@@ -691,7 +691,7 @@ const DocumentGeneration = () => {
                   Итоговый пакет документов
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Заполнено: {doneCount} из {totalDocs} • Пропущено: {skippedCount} • Не требуется: {notRequiredCount}
+                  Из {totalDocs} документов: Заполнено: {doneCount} Пропущено: {skippedCount} Не требуется: {notRequiredCount}
                 </p>
               </CardContent>
             </Card>
