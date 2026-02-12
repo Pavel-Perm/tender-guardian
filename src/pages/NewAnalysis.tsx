@@ -121,11 +121,28 @@ const NewAnalysis = () => {
       });
 
       if (analyzeError) {
-        // supabase.functions.invoke puts the response body in data even on error status
-        const errMsg = analyzeResult?.error 
-          || (typeof analyzeError === 'object' && 'context' in analyzeError ? analyzeError.context?.body?.error : null)
-          || analyzeError.message 
-          || "Ошибка при анализе";
+        let errMsg = "Ошибка при анализе";
+        try {
+          // analyzeResult may contain parsed body on some SDK versions
+          if (analyzeResult?.error) {
+            errMsg = analyzeResult.error;
+          } else if (analyzeError.context) {
+            // Try to parse context body
+            const ctx = analyzeError.context;
+            if (typeof ctx === 'object' && ctx.body) {
+              const body = typeof ctx.body === 'string' ? JSON.parse(ctx.body) : ctx.body;
+              if (body?.error) errMsg = body.error;
+            } else if (typeof ctx === 'string') {
+              const parsed = JSON.parse(ctx);
+              if (parsed?.error) errMsg = parsed.error;
+            }
+          }
+        } catch {
+          // If parsing fails, try the message
+          if (analyzeError.message && analyzeError.message !== 'Edge Function returned a non-2xx status code') {
+            errMsg = analyzeError.message;
+          }
+        }
         throw new Error(errMsg);
       }
 
