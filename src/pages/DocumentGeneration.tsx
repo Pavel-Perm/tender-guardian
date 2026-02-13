@@ -161,11 +161,12 @@ const DocumentGeneration = () => {
   }, [id, user, participantType]);
 
   const generateDocument = useCallback(async (docIndex: number) => {
-    let docName = "";
-    setDocStates(prev => {
-      docName = prev[docIndex].name;
-      return prev.map((d, i) => i === docIndex ? { ...d, status: "generating" } : d);
-    });
+    const docName = docStates[docIndex]?.name || "";
+    if (!docName) {
+      toast({ title: "Ошибка", description: "Имя документа не найдено", variant: "destructive" });
+      return;
+    }
+    setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "generating" } : d));
 
     try {
       const { data, error } = await supabase.functions.invoke("generate-bid-documents", {
@@ -196,7 +197,7 @@ const DocumentGeneration = () => {
       setDocStates(prev => prev.map((d, i) => i === docIndex ? { ...d, status: "error", error: err.message } : d));
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     }
-  }, [id, companyData, tenderContext, bidAmountData, toast, saveDocToDb]);
+  }, [id, companyData, tenderContext, bidAmountData, toast, saveDocToDb, docStates]);
 
   // Amount edit
   const startEditAmount = () => {
